@@ -2,3 +2,7 @@ pytest
 ruff
 jax
 flax
+torch
+torchvision
+pillow
+numpy
