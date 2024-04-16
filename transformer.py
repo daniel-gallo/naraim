@@ -1,5 +1,6 @@
 from typing import Callable
 
+import jax.numpy as jnp
 from flax import linen as nn
 
 
@@ -19,7 +20,7 @@ class TransformerLayer(nn.Module):
     dropout_probability: float
 
     @nn.compact
-    def __call__(self, x, training: bool):
+    def __call__(self, x, training: bool, mask=None):
         attention_residual_block = ResidualBlock(
             nn.Sequential(
                 [
@@ -40,7 +41,14 @@ class TransformerLayer(nn.Module):
             )
         )
 
-        x = attention_residual_block(x)
+        if mask is not None:
+            bs, sequence_length, _ = x.shape
+            # The mask should be batch_size x num_heads x sequence_length x sequence_length
+            # We can use broadcasting for the first two dimensions
+            mask = jnp.expand_dims(mask, 0)
+            mask = jnp.expand_dims(mask, 0)
+
+        x = attention_residual_block(x, mask=mask)
         x = mlp_residual_block(x)
         return x
 
@@ -53,7 +61,7 @@ class Transformer(nn.Module):
     dropout_probability: float
 
     @nn.compact
-    def __call__(self, x, training: bool):
+    def __call__(self, x, training: bool, mask=None):
         for _ in range(self.num_layers):
             layer = TransformerLayer(
                 num_heads=self.num_heads,
@@ -62,6 +70,6 @@ class Transformer(nn.Module):
                 dropout_probability=self.dropout_probability,
             )
 
-            x = layer(x, training)
+            x = layer(x, training, mask)
 
         return x
