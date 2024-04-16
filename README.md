@@ -2,6 +2,11 @@
 
 [![Status](https://github.com/jwpartyka/uva-fomo/actions/workflows/python.yml/badge.svg)](https://github.com/jwpartyka/uva-fomo/actions/workflows/python.yml)
 
+## Dev instructions
+1. Configure a virtual environment
+2. Run `pip install pre-commit`
+3. Run `pre-commit install`
+
 ## AIM paper
 https://github.com/apple/ml-aim
 
