@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 import numpy as np
 from PIL.Image import Image
 from torch.utils.data import DataLoader
@@ -52,7 +53,10 @@ def collate_pretraining(batch):
         Y[i, 1, :] = image[14:, :14].flatten()
         Y[i, 2, :] = image[14:, 14:].flatten()
 
-    return X, Y
+    # TODO: is it tril for sure? Or is it triu?
+    # TODO: implement uniform sampling
+    mask = jnp.tril(jnp.ones((num_patches_per_image, num_patches_per_image)))
+    return X, Y, mask
 
 
 def get_fashion_mnist_dataloader(

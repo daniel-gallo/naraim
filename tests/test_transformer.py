@@ -93,6 +93,3 @@ def test_mask():
     params = model.init(rng, x, training=False)
     output = model.apply(params, x, training=False, mask=mask, rngs={"dropout": rng})
     assert jnp.all(jnp.isclose(output[:, : n // 2, :], output[:, n // 2 :, :]))
-
-
-# TODO: create a test for the autoregressive framework. Do we need jnp.tril, right? or jnp.triu? #dyslexia
