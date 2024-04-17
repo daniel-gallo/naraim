@@ -6,6 +6,7 @@
 1. Configure a virtual environment
 2. Run `pip install pre-commit`
 3. Run `pre-commit install`
+4. Run `pre-commit run --all-files` before commit
 
 ## AIM paper
 https://github.com/apple/ml-aim
