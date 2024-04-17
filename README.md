@@ -15,3 +15,6 @@ https://github.com/apple/ml-aim
 https://github.com/kyegomez/NaViT
 
 https://github.com/lucidrains/vit-pytorch/blob/main/vit_pytorch/na_vit.py
+
+## MAE paper
+https://github.com/facebookresearch/mae
