@@ -43,7 +43,7 @@ def collate_pretraining(batch):
     X = np.zeros((batch_size, num_patches_per_image, patch_size**2), dtype=np.float32)
     Y = np.zeros((batch_size, num_patches_per_image, patch_size**2), dtype=np.float32)
 
-    for i, (image, label) in enumerate(batch):
+    for i, (image, _) in enumerate(batch):
         assert image.shape == (28, 28)
         X[i, 0, :] = image[:14, :14].flatten()
         X[i, 1, :] = image[:14, 14:].flatten()

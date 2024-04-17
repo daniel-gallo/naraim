@@ -58,7 +58,7 @@ class PretrainingModel(nn.Module):
     dropout_probability: float
 
     @nn.compact
-    def __call__(self, x, training: bool):
+    def __call__(self, x, training: bool, mask=None):
         x = InitialProjection(embedding_dimension=self.embedding_dimension)(x)
         x = PositionalEncoding()(x)
         x = Transformer(
@@ -67,7 +67,7 @@ class PretrainingModel(nn.Module):
             embedding_dimension=self.embedding_dimension,
             hidden_dimension=self.hidden_dimension,
             dropout_probability=self.dropout_probability,
-        )(x, training)
+        )(x, training, mask=mask)
         x = PretrainingHead(patch_size=self.patch_size)(x)
 
         return x
