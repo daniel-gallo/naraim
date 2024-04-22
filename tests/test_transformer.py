@@ -12,7 +12,7 @@ def test_residual_block():
     d = 768
     x = jnp.zeros((bs, n, d))
 
-    model = ResidualBlock(fn=lambda x: x)
+    model = ResidualBlock(dtype=jnp.float32, fn=lambda x: x)
     rng = random.key(seed=0)
     params = model.init(rng, x)
     output_shape = model.apply(params, x).shape
@@ -27,6 +27,7 @@ def test_transformer_layer():
     x = jnp.zeros((bs, n, d))
 
     model = TransformerLayer(
+        dtype=jnp.float32,
         num_heads=6,
         embedding_dimension=768,
         hidden_dimension=128,
@@ -46,6 +47,7 @@ def test_transformer():
     x = jnp.zeros((bs, n, d))
 
     model = Transformer(
+        dtype=jnp.float32,
         num_layers=8,
         num_heads=6,
         embedding_dimension=768,
@@ -75,6 +77,7 @@ def test_mask():
     d = 768
 
     model = Transformer(
+        dtype=jnp.float32,
         num_layers=8,
         num_heads=6,
         embedding_dimension=768,

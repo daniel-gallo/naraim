@@ -5,15 +5,17 @@ from flax import linen as nn
 
 
 class ResidualBlock(nn.Module):
+    dtype: jnp.dtype
     fn: Callable
 
     @nn.compact
     def __call__(self, x, *args, **kwargs):
-        normalized_x = nn.LayerNorm()(x)
+        normalized_x = nn.LayerNorm(dtype=self.dtype)(x)
         return x + self.fn(normalized_x, *args, **kwargs)
 
 
 class TransformerLayer(nn.Module):
+    dtype: jnp.dtype
     num_heads: int
     embedding_dimension: int
     hidden_dimension: int
@@ -22,23 +24,25 @@ class TransformerLayer(nn.Module):
     @nn.compact
     def __call__(self, x, training: bool, mask=None):
         attention_residual_block = ResidualBlock(
-            nn.Sequential(
+            dtype=self.dtype,
+            fn=nn.Sequential(
                 [
-                    nn.MultiHeadDotProductAttention(self.num_heads),
+                    nn.MultiHeadDotProductAttention(self.num_heads, dtype=self.dtype),
                     nn.Dropout(self.dropout_probability, deterministic=not training),
                 ]
-            )
+            ),
         )
         mlp_residual_block = ResidualBlock(
-            nn.Sequential(
+            dtype=self.dtype,
+            fn=nn.Sequential(
                 [
-                    nn.Dense(self.hidden_dimension),
+                    nn.Dense(self.hidden_dimension, dtype=self.dtype),
                     nn.gelu,
                     nn.Dropout(self.dropout_probability, deterministic=not training),
-                    nn.Dense(self.embedding_dimension),
+                    nn.Dense(self.embedding_dimension, dtype=self.dtype),
                     nn.Dropout(self.dropout_probability, deterministic=not training),
                 ]
-            )
+            ),
         )
 
         if mask is not None:
@@ -54,6 +58,7 @@ class TransformerLayer(nn.Module):
 
 
 class Transformer(nn.Module):
+    dtype: jnp.dtype
     num_layers: int
     num_heads: int
     embedding_dimension: int
@@ -64,6 +69,7 @@ class Transformer(nn.Module):
     def __call__(self, x, training: bool, mask=None):
         for _ in range(self.num_layers):
             layer = TransformerLayer(
+                dtype=self.dtype,
                 num_heads=self.num_heads,
                 embedding_dimension=self.embedding_dimension,
                 hidden_dimension=self.hidden_dimension,

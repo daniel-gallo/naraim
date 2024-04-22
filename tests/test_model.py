@@ -5,6 +5,7 @@ from model import PretrainingModel, ClassificationModel
 
 
 def test_pretraining_model():
+    dtype = jnp.float32
     bs = 32
     num_patches = 4
     patch_size = 196
@@ -18,6 +19,7 @@ def test_pretraining_model():
     x = jnp.zeros((bs, num_patches, patch_size))
 
     pretraining_model = PretrainingModel(
+        dtype=dtype,
         patch_size=patch_size,
         num_layers=num_layers,
         num_heads=num_heads,
@@ -36,6 +38,7 @@ def test_pretraining_model():
 
 
 def test_classification_model():
+    dtype = jnp.float32
     bs = 32
     num_patches = 4
     patch_size = 196
@@ -49,7 +52,8 @@ def test_classification_model():
 
     x = jnp.zeros((bs, num_patches, patch_size))
 
-    pretraining_model = ClassificationModel(
+    classification_model = ClassificationModel(
+        dtype=dtype,
         num_categories=num_categories,
         num_layers=num_layers,
         num_heads=num_heads,
@@ -59,8 +63,8 @@ def test_classification_model():
     )
 
     rng = random.key(seed=0)
-    params = pretraining_model.init(rng, x, training=True)
-    output_shape = pretraining_model.apply(
+    params = classification_model.init(rng, x, training=True)
+    output_shape = classification_model.apply(
         params, x, training=True, rngs={"dropout": rng}
     ).shape
 
