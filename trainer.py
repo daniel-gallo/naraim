@@ -16,7 +16,6 @@ from model import ClassificationModel, PretrainingModel
 from torch.utils.tensorboard import SummaryWriter
 
 # TODO: Adding lr scheduler / weight decay?
-# TODO: Logging?
 # TODO: Train/val/test split. Currently, there're only train and validation dataloaders
 
 # TODO: Implementing a generic Trainer class
