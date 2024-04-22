@@ -13,8 +13,9 @@ import jax.numpy as jnp
 from jax import random
 from model import ClassificationModel, PretrainingModel
 
+from torch.utils.tensorboard import SummaryWriter
+
 # TODO: Adding lr scheduler / weight decay?
-# TODO: Logging?
 # TODO: Train/val/test split. Currently, there're only train and validation dataloaders
 
 # TODO: Implementing a generic Trainer class
@@ -35,12 +36,18 @@ class TrainerAutoregressor:
         # Empty model
         self.model = PretrainingModel(**model_hparams)
 
-        # Initialize model
+        # Initialize model and logger
         self.init_model(dummy_imgs)
+        self.init_logger()
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
         self.eval_step = jax.jit(self.eval_step)
+
+    def init_logger(self):
+        self.logger = SummaryWriter(log_dir=self.log_dir)
+        self.logger.add_text("learning rate", f"{self.lr}")
+        self.logger.add_text("seed", f"{self.seed}")
 
     def init_model(self, exmp_imgs):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
@@ -112,21 +119,28 @@ class TrainerAutoregressor:
         # Track best eval accuracy
         best_eval = 999999999
         for epoch_idx in tqdm(range(1, num_epochs + 1)):
-            self.train_epoch(train_loader, epoch=epoch_idx)
+            train_metrics = self.train_epoch(train_loader)
             eval_mse = self.eval_model(val_loader)
             if eval_mse <= best_eval:
                 best_eval = eval_mse
                 self.save_model(step=epoch_idx)
 
-    def train_epoch(self, train_loader, epoch):
+            # Log the loss
+            self.logger.add_scalar("MSE/train", train_metrics["mse"], epoch_idx)
+            self.logger.add_scalar("MSE/val", eval_mse, epoch_idx)
+
+    def train_epoch(self, train_loader):
         # Train model for one epoch, and print avg loss and accuracy
         metrics = defaultdict(list)
         for batch in tqdm(train_loader, desc="Training", leave=False):
             self.state, self.rng, loss = self.train_step(self.state, self.rng, batch)
             metrics["mse"].append(loss)
+
+        avg_metrics = dict()
         for key in metrics:
-            avg_val = np.stack(jax.device_get(metrics[key])).mean()
-            print(f"Epoch {epoch} | Avg_{key} {avg_val}")
+            avg_metrics[key] = np.stack(jax.device_get(metrics[key])).mean()
+
+        return avg_metrics
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg accuracy
@@ -170,12 +184,18 @@ class TrainerClassifier:
         # Empty model
         self.model = ClassificationModel(**model_hparams)
 
-        # Initialize model
+        # Initialize model and logger
         self.init_model(dummy_imgs)
+        self.init_logger()
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
         self.eval_step = jax.jit(self.eval_step)
+
+    def init_logger(self):
+        self.logger = SummaryWriter(log_dir=self.log_dir)
+        self.logger.add_text("learning rate", f"{self.lr}")
+        self.logger.add_text("seed", f"{self.seed}")
 
     def init_model(self, exmp_imgs):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
@@ -236,11 +256,17 @@ class TrainerClassifier:
         # Track best eval accuracy
         best_eval = 0.0
         for epoch_idx in tqdm(range(1, num_epochs + 1)):
-            self.train_epoch(train_loader, epoch=epoch_idx)
+            train_metrics = self.train_epoch(train_loader, epoch=epoch_idx)
             eval_acc = self.eval_model(val_loader)
             if eval_acc >= best_eval:
                 best_eval = eval_acc
                 self.save_model(step=epoch_idx)
+
+            # Log the loss
+            self.logger.add_scalar("Acc/train", train_metrics["acc"], epoch_idx)
+            self.logger.add_scalar("Acc/val", eval_acc, epoch_idx)
+
+        self.logger.flush()
 
     def train_epoch(self, train_loader, epoch):
         # Train model for one epoch, and print avg loss and accuracy
@@ -251,9 +277,11 @@ class TrainerClassifier:
             )
             metrics["loss"].append(loss)
             metrics["acc"].append(acc)
+
+        avg_metrics = dict()
         for key in metrics:
-            avg_val = np.stack(jax.device_get(metrics[key])).mean()
-            print(f"Epoch {epoch} | Avg_{key} {avg_val}")
+            avg_metrics[key] = np.stack(jax.device_get(metrics[key])).mean()
+        return avg_metrics
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg accuracy
