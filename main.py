@@ -26,7 +26,7 @@ def train_autoregressor():
 
     trainer.train_model(train_dataloader, val_dataloader, num_epochs=2)
     val_mse = trainer.eval_model(val_dataloader)
-    print(val_mse)
+    print(f"Final MSE: {val_mse}")
 
 
 def train_classifier():
@@ -51,11 +51,11 @@ def train_classifier():
 
     trainer.train_model(train_dataloader, val_dataloader, num_epochs=2)
     val_acc = trainer.eval_model(val_dataloader)
-    print(val_acc)
+    print(f"Final accuracy: {val_acc}")
 
 
 # TODO: Argparser
 # TODO: Making the methods more generic (adding some arguments for the two functions lol)
 if __name__ == "__main__":
-    # train_classifier()
+    train_classifier()
     train_autoregressor()
