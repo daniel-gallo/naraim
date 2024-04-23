@@ -146,8 +146,8 @@ class TrainerAutoregressor:
         total_mse, count = 0, 0
         for batch in data_loader:
             mse, self.rng = self.eval_step(self.state, self.rng, batch)
-            total_mse += mse
-            count += 1
+            total_mse += mse * batch[0].shape[0]
+            count += batch[0].shape[0]
 
         res = (total_mse / count).item()
         return res
