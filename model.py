@@ -26,7 +26,9 @@ class PretrainingHead(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        return nn.Dense(self.patch_size, dtype=self.dtype)(x)
+        x = nn.LayerNorm()(x)
+        x = nn.Dense(self.patch_size, dtype=self.dtype)(x)
+        return x
 
 
 class ClassificationHead(nn.Module):
