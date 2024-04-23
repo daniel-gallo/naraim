@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 from jax import random
 from jax.scipy.linalg import block_diag
@@ -59,7 +58,6 @@ def test_transformer():
     output_shape = model.apply(params, x, training=True, rngs={"dropout": rng}).shape
 
     assert output_shape == (bs, n, d)
-    print(jax.tree_map(lambda x: x.shape, params))
 
 
 def test_mask():
