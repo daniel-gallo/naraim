@@ -136,11 +136,10 @@ class TrainerAutoregressor:
             self.state, self.rng, loss = self.train_step(self.state, self.rng, batch)
             metrics["mse"].append(loss)
 
-        avg_metrics = dict()
-        for key in metrics:
-            avg_metrics[key] = np.stack(jax.device_get(metrics[key])).mean()
+        metrics = jax.device_get(metrics)
+        metrics = {key: np.array(metric).mean() for key, metric in metrics.items()}
 
-        return avg_metrics
+        return metrics
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg accuracy
@@ -278,10 +277,10 @@ class TrainerClassifier:
             metrics["loss"].append(loss)
             metrics["acc"].append(acc)
 
-        avg_metrics = dict()
-        for key in metrics:
-            avg_metrics[key] = np.stack(jax.device_get(metrics[key])).mean()
-        return avg_metrics
+        metrics = jax.device_get(metrics)
+        metrics = {key: np.array(metric).mean() for key, metric in metrics.items()}
+
+        return metrics
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg accuracy
