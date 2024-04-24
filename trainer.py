@@ -127,9 +127,7 @@ class TrainerAutoregressor:
         best_metrics = {"Min_MSE/train": None, "Min_MSE/val": None}
 
         for epoch_idx in tqdm(range(1, num_epochs + 1)):
-            train_metrics = self.train_epoch(
-                train_loader, epoch_idx, log_every_n_steps=10
-            )
+            train_metrics = self.train_epoch(train_loader, epoch_idx)
             eval_mse = self.eval_model(val_loader)
             if eval_mse <= best_eval:
                 best_eval = eval_mse
@@ -144,7 +142,7 @@ class TrainerAutoregressor:
         self.logger.flush()
         self.logger.close()
 
-    def train_epoch(self, train_loader):
+    def train_epoch(self, train_loader, epoch):
         # Train model for one epoch, and print avg loss
         metrics = defaultdict(list)
         for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
