@@ -31,8 +31,12 @@ def test_classification_model():
 
     rng = random.key(seed=0)
     params = classification_model.init(rng, x, training=True)
+
+    # Check if shape is correct
     output_shape = classification_model.apply(
         params, x, training=True, rngs={"dropout": rng}
     ).shape
-
     assert output_shape == (bs, num_categories)
+
+    # Check inference does not need rng
+    classification_model.apply(params, x, training=False)

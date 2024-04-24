@@ -30,8 +30,12 @@ def test_pretraining_model():
 
     rng = random.key(seed=0)
     params = pretraining_model.init(rng, x, training=True)
+
+    # Check if shape is correct
     output_shape = pretraining_model.apply(
         params, x, training=True, rngs={"dropout": rng}
     ).shape
-
     assert output_shape == (bs, num_patches, patch_size)
+
+    # Check inference does not need rng
+    pretraining_model.apply(params, x, training=False)
