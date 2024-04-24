@@ -56,16 +56,17 @@ def collate_classification(
 
 
 def collate_pretraining(batch, n_channels=3, patch_size=14, padding=0.0):
-    patched_images, labels, resolutions = collate_classification(
+    patched_images, _, resolutions = collate_classification(
         batch, n_channels, patch_size, padding
     )
+    targets = patched_images[:, 1:, ...]
     patched_images = patched_images[:, :-1, ...]
     num_patches_per_image = patched_images.shape[1]
 
     # TODO: is it tril for sure? Or is it triu?
     # TODO: implement uniform sampling
     mask = jnp.tril(jnp.ones((num_patches_per_image, num_patches_per_image)))
-    return patched_images, labels, mask, resolutions
+    return patched_images, targets, mask, resolutions
 
 
 def get_fashion_mnist_dataloader(

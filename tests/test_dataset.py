@@ -21,7 +21,7 @@ def test_fashion_mnist_pretraining(train: bool):
     X, Y, mask, resolutions = next(iter(dataloader))
 
     assert X.shape == (batch_size, num_patches, patch_size)
-    assert Y.shape == (batch_size,)
+    assert Y.shape == (batch_size, num_patches, patch_size)
     assert mask.shape == (num_patches, num_patches)
     assert resolutions.shape == (batch_size, 2)
 
@@ -70,7 +70,7 @@ def test_collate_pretraining():
     patched_images, labels, mask, resolutions = collate_pretraining(batch)
 
     assert patched_images.shape == (4, 288, 588)
-    assert labels.shape == (4,)
+    assert labels.shape == (4, 288, 588)
     assert resolutions.shape == (4, 2)
     assert mask.shape == (288, 288)
     assert np.all(resolutions == [[14, 14], [28, 28], [42, 42], [250, 250]])
@@ -89,7 +89,8 @@ def test_imagenet_dataloader_pretraining(train: bool):
 
     assert X.shape[0] == batch_size
     assert X.shape[2] == patch_size
-    assert Y.shape == (batch_size,)
+    assert Y.shape[0] == batch_size
+    assert Y.shape[2] == patch_size
 
 
 @pytest.mark.parametrize("train", [True, False])
