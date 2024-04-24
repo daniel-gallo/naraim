@@ -90,10 +90,12 @@ class TrainerAutoregressor:
         state = state.apply_gradients(grads=grads)
         return state, rng, loss
 
-    def eval_step(self, state, rng, batch):
+    def eval_step(self, state, batch):
         # Return the mse for a single batch
-        mse, rng = self.get_loss(state.params, rng, batch, train=False)
-        return mse, rng
+        mse, _ = self.get_loss(
+            state.params, self.rng, batch, train=False
+        )  # fixed rng when evaluating model
+        return mse
 
     def init_optimizer(self):
         # TODO: lr_scheduler?
@@ -135,7 +137,7 @@ class TrainerAutoregressor:
         self.logger.close()
 
     def train_epoch(self, train_loader):
-        # Train model for one epoch, and print avg loss and accuracy
+        # Train model for one epoch, and print avg loss
         metrics = defaultdict(list)
         for batch in tqdm(train_loader, desc="Training", leave=False):
             self.state, self.rng, loss = self.train_step(self.state, self.rng, batch)
@@ -147,10 +149,10 @@ class TrainerAutoregressor:
         return metrics
 
     def eval_model(self, data_loader):
-        # Test model on all images of a data loader and return avg accuracy
+        # Test model on all images of a data loader and return avg mse
         total_mse, count = 0, 0
         for batch in data_loader:
-            mse, self.rng = self.eval_step(self.state, self.rng, batch)
+            mse = self.eval_step(self.state, batch)
             total_mse += mse * batch[0].shape[0]
             count += batch[0].shape[0]
 
@@ -233,10 +235,12 @@ class TrainerClassifier:
         state = state.apply_gradients(grads=grads)
         return state, rng, loss, acc
 
-    def eval_step(self, state, rng, batch):
+    def eval_step(self, state, batch):
         # Return the accuracy for a single batch
-        _, (acc, rng) = self.get_loss(state.params, rng, batch, train=False)
-        return rng, acc
+        _, (acc, _) = self.get_loss(
+            state.params, self.rng, batch, train=False
+        )  # fixed rng when evaluating model
+        return acc
 
     def init_optimizer(self):
         # TODO: lr_scheduler?
@@ -296,7 +300,7 @@ class TrainerClassifier:
         # Test model on all images of a data loader and return avg accuracy
         correct_class, count = 0, 0
         for batch in data_loader:
-            self.rng, acc = self.eval_step(self.state, self.rng, batch)
+            acc = self.eval_step(self.state, batch)
             correct_class += acc * batch[0].shape[0]
             count += batch[0].shape[0]
         eval_acc = (correct_class / count).item()
