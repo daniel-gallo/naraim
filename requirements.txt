@@ -9,3 +9,4 @@ numpy
 optax
 tqdm
 tensorboard
+einops
