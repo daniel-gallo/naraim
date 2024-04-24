@@ -1,6 +1,7 @@
+import jax.numpy as jnp
+
 from dataset import get_fashion_mnist_dataloader
 from trainer import TrainerAutoregressor, TrainerClassifier
-import jax.numpy as jnp
 
 
 def train_autoregressor():
