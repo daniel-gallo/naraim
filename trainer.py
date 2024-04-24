@@ -97,10 +97,10 @@ class TrainerAutoregressor:
         state = state.apply_gradients(grads=grads)
         return state, rng, loss
 
-    def eval_step(self, state, batch):
+    def eval_step(self, state, rng, batch):
         # Return the mse for a single batch
         mse, _ = self.get_loss(
-            state.params, self.rng, batch, train=False
+            state.params, rng, batch, train=False
         )  # fixed rng when evaluating model
         return mse
 
@@ -163,8 +163,10 @@ class TrainerAutoregressor:
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg mse
         total_mse, count = 0, 0
+        eval_rng = jax.random.PRNGKey(self.seed)
+
         for batch in data_loader:
-            mse = self.eval_step(self.state, batch)
+            mse = self.eval_step(self.state, eval_rng, batch)
             total_mse += mse * batch[0].shape[0]
             count += batch[0].shape[0]
 
@@ -250,11 +252,9 @@ class TrainerClassifier:
         state = state.apply_gradients(grads=grads)
         return state, rng, loss, acc
 
-    def eval_step(self, state, batch):
+    def eval_step(self, state, rng, batch):
         # Return the accuracy for a single batch
-        _, (acc, _) = self.get_loss(
-            state.params, self.rng, batch, train=False
-        )  # fixed rng when evaluating model
+        _, (acc, _) = self.get_loss(state.params, rng, batch, train=False)
         return acc
 
     def init_optimizer(self):
@@ -322,8 +322,10 @@ class TrainerClassifier:
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg accuracy
         correct_class, count = 0, 0
+        eval_rng = jax.random.PRNGKey(self.seed)  # same rng for evaluation
+
         for batch in data_loader:
-            acc = self.eval_step(self.state, batch)
+            acc = self.eval_step(self.state, eval_rng, batch)
             correct_class += acc * batch[0].shape[0]
             count += batch[0].shape[0]
         eval_acc = (correct_class / count).item()
