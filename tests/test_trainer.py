@@ -27,9 +27,9 @@ def test_autoregressor_training():
         hidden_dimension=128,
         dropout_probability=0.1,
     )
-    assert trainer.state == None
+    assert trainer.state is None
     trainer.init_optimizer()
-    assert trainer.state != None
+    assert trainer.state is not None
 
     # Test train_step
     output = trainer.train_step(
@@ -39,14 +39,14 @@ def test_autoregressor_training():
     _, _, loss = output  # state, rng, loss
     assert isinstance(loss, xla_extension.ArrayImpl)
     assert loss.size == 1
-    assert type(loss.item()) == float
+    assert isinstance(loss.item(), float)
 
     # Test eval_step
     rng = jax.random.PRNGKey(42)
     mse = trainer.eval_step(trainer.state, rng, next(iter(val_dataloader)))
     assert isinstance(mse, xla_extension.ArrayImpl)
     assert mse.size == 1
-    assert type(mse.item()) == float
+    assert isinstance(mse.item(), float)
 
 
 def test_classifier_training():
@@ -69,9 +69,9 @@ def test_classifier_training():
         dropout_probability=0.1,
     )
 
-    assert trainer.state == None
+    assert trainer.state is None
     trainer.init_optimizer()
-    assert trainer.state != None
+    assert trainer.state is not None
 
     # Test train_step
     output = trainer.train_step(
@@ -81,7 +81,7 @@ def test_classifier_training():
     _, _, loss, acc = output  # state, rng, loss, acc
     assert isinstance(loss, xla_extension.ArrayImpl)
     assert loss.size == 1
-    assert type(loss.item()) == float
+    assert isinstance(loss.item(), float)
     assert acc >= 0 and acc <= 1
 
     # Test eval_step
@@ -89,5 +89,5 @@ def test_classifier_training():
     acc = trainer.eval_step(trainer.state, rng, next(iter(val_dataloader)))
     assert isinstance(acc, xla_extension.ArrayImpl)
     assert acc.size == 1
-    assert type(acc.item()) == float
+    assert isinstance(acc.item(), float)
     assert acc >= 0 and acc <= 1
