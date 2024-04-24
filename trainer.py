@@ -63,7 +63,7 @@ class TrainerAutoregressor:
         """
         imgs, targets, mask: [bs, 28, 28]
         """
-        imgs, targets, mask = batch
+        imgs, targets, mask, resolutions = batch
 
         # Normalize the target
         if self.norm_pix_loss:
@@ -226,7 +226,7 @@ class TrainerClassifier:
         self.state = None
 
     def get_loss(self, params, rng, batch, train):
-        imgs, labels = batch
+        imgs, labels, resolutions = batch
         rng, dropout_apply_rng = random.split(rng)
         logits = self.model.apply(
             {"params": params},

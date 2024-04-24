@@ -10,3 +10,4 @@ optax
 tqdm
 tensorboard
 einops
+matplotlib
