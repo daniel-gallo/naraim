@@ -21,13 +21,20 @@ from model import ClassificationModel, PretrainingModel
 
 class TrainerAutoregressor:
     def __init__(
-        self, dummy_imgs, lr=1e-3, seed=42, norm_pix_loss=False, **model_hparams
+        self,
+        dummy_imgs,
+        lr=1e-3,
+        seed=42,
+        log_every_n_steps=10,
+        norm_pix_loss=False,
+        **model_hparams,
     ):
         super().__init__()
         self.lr = lr
         self.seed = seed
         self.rng = jax.random.PRNGKey(self.seed)
         self.norm_pix_loss = norm_pix_loss
+        self.log_every_n_steps = log_every_n_steps
 
         self.log_dir = os.path.join(str(Path.cwd()), "checkpoints/autoregressor/")
 
@@ -118,7 +125,9 @@ class TrainerAutoregressor:
         best_metrics = {"Min_MSE/train": None, "Min_MSE/val": None}
 
         for epoch_idx in tqdm(range(1, num_epochs + 1)):
-            train_metrics = self.train_epoch(train_loader)
+            train_metrics = self.train_epoch(
+                train_loader, epoch_idx, log_every_n_steps=10
+            )
             eval_mse = self.eval_model(val_loader)
             if eval_mse <= best_eval:
                 best_eval = eval_mse
@@ -127,19 +136,24 @@ class TrainerAutoregressor:
                 best_metrics["Min_MSE/val"] = eval_mse
 
             # Log the loss
-            self.logger.add_scalar("MSE/train", train_metrics["mse"], epoch_idx)
             self.logger.add_scalar("MSE/val", eval_mse, epoch_idx)
 
         self.logger.add_hparams(hparams_dict, best_metrics)
         self.logger.flush()
         self.logger.close()
 
-    def train_epoch(self, train_loader):
+    def train_epoch(self, train_loader, epoch):
         # Train model for one epoch, and print avg loss and accuracy
         metrics = defaultdict(list)
-        for batch in tqdm(train_loader, desc="Training", leave=False):
+        for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
             self.state, self.rng, loss = self.train_step(self.state, self.rng, batch)
             metrics["mse"].append(loss)
+
+            if idx > 1 and idx % self.log_every_n_steps == 0:
+                step = (epoch - 1) * (len(train_loader) // 10) + idx / 10
+                self.logger.add_scalar(
+                    "MSE/train", np.array(jax.device_get(metrics)["mse"]).mean(), step
+                )
 
         metrics = jax.device_get(metrics)
         metrics = {key: np.array(metric).mean() for key, metric in metrics.items()}
@@ -177,11 +191,14 @@ class TrainerAutoregressor:
 
 
 class TrainerClassifier:
-    def __init__(self, dummy_imgs, lr=1e-3, seed=42, **model_hparams):
+    def __init__(
+        self, dummy_imgs, lr=1e-3, seed=42, log_every_n_steps=10, **model_hparams
+    ):
         super().__init__()
         self.lr = lr
         self.seed = seed
         self.rng = jax.random.PRNGKey(self.seed)
+        self.log_every_n_steps = log_every_n_steps
 
         self.log_dir = os.path.join(str(Path.cwd()), "checkpoints/classification/")
 
@@ -270,7 +287,6 @@ class TrainerClassifier:
                 best_metrics["Max_Acc/val"] = eval_acc
 
             # Log the loss
-            self.logger.add_scalar("Acc/train", train_metrics["acc"], epoch_idx)
             self.logger.add_scalar("Acc/val", eval_acc, epoch_idx)
 
         self.logger.add_hparams(hparams_dict, best_metrics)
@@ -280,12 +296,21 @@ class TrainerClassifier:
     def train_epoch(self, train_loader, epoch):
         # Train model for one epoch, and print avg loss and accuracy
         metrics = defaultdict(list)
-        for batch in tqdm(train_loader, desc="Training", leave=False):
+        for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
             self.state, self.rng, loss, acc = self.train_step(
                 self.state, self.rng, batch
             )
             metrics["loss"].append(loss)
             metrics["acc"].append(acc)
+
+            if idx > 1 and idx % self.log_every_n_steps == 0:
+                step = (epoch - 1) * (len(train_loader) // 10) + idx // 10
+                self.logger.add_scalar(
+                    "Loss/train", np.array(jax.device_get(metrics)["loss"]).mean(), step
+                )
+                self.logger.add_scalar(
+                    "Acc/train", np.array(jax.device_get(metrics)["acc"]).mean(), step
+                )
 
         metrics = jax.device_get(metrics)
         metrics = {key: np.array(metric).mean() for key, metric in metrics.items()}
