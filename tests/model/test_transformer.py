@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import random
 from jax.scipy.linalg import block_diag
 
-from transformer import ResidualBlock, TransformerLayer, Transformer
+from model.transformer import ResidualBlock, Transformer, TransformerLayer
 
 
 def test_residual_block():

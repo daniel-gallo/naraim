@@ -1,3 +1,4 @@
+import flax.linen as nn
 import jax
 from einops import rearrange
 from jax import numpy as jnp
@@ -37,3 +38,10 @@ def get_2d_positional_embedding(
         ],
         axis=2,
     )
+
+
+class PositionalEncoding(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        # TODO: implement
+        return x
