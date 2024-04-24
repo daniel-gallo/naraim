@@ -1,19 +1,17 @@
-from tqdm import tqdm
-from collections import defaultdict
-import numpy as np
 import os
+from collections import defaultdict
 from pathlib import Path
 
-from flax.training import train_state, checkpoints
-
-import optax
 import jax
-
 import jax.numpy as jnp
+import numpy as np
+import optax
+from flax.training import checkpoints, train_state
 from jax import random
-from model import ClassificationModel, PretrainingModel
-
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from model import ClassificationModel, PretrainingModel
 
 # TODO: Adding lr scheduler / weight decay?
 # TODO: Train/val/test split. Currently, there're only train and validation dataloaders
