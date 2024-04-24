@@ -2,7 +2,7 @@ import argparse
 
 import jax.numpy as jnp
 
-from dataset import get_fashion_mnist_dataloader
+from dataset import get_dataloader
 from trainer import TrainerAutoregressor, TrainerClassifier
 
 
@@ -14,13 +14,14 @@ def train_autoregressor(
     num_layers,
     num_heads,
     patch_size,
+    dataset_name="fashion_mnist",
 ):
-    train_dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=True, batch_size=batch_size
+    train_dataloader = get_dataloader(
+        dataset_name, pretraining=True, train=True, batch_size=batch_size
     )
 
-    val_dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=False, batch_size=batch_size
+    val_dataloader = get_dataloader(
+        dataset_name, pretraining=True, train=False, batch_size=batch_size
     )
 
     trainer = TrainerAutoregressor(
@@ -48,13 +49,14 @@ def train_classifier(
     num_layers,
     num_heads,
     num_categories,
+    dataset_name="fashion_mnist",
 ):
-    train_dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=True, batch_size=batch_size
+    train_dataloader = get_dataloader(
+        dataset_name, pretraining=False, train=True, batch_size=batch_size
     )
 
-    val_dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=False, batch_size=batch_size
+    val_dataloader = get_dataloader(
+        dataset_name, pretraining=False, train=False, batch_size=batch_size
     )
 
     trainer = TrainerClassifier(
@@ -108,6 +110,13 @@ if __name__ == "__main__":
         "--num_heads", type=int, default=6, help="Number of attention heads"
     )
     parser.add_argument("--patch_size", type=int, default=196, help="Patch size")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="fashion_mnist",
+        choices=["fashion_mnist", "imagenet"],
+        help="Dataset name",
+    )
 
     args = parser.parse_args()
 
@@ -119,6 +128,7 @@ if __name__ == "__main__":
         args.num_layers,
         args.num_heads,
         args.num_categories,
+        dataset_name=args.dataset,
     )
     train_autoregressor(
         args.batch_size,
@@ -128,4 +138,5 @@ if __name__ == "__main__":
         args.num_layers,
         args.num_heads,
         args.patch_size,
+        dataset_name=args.dataset,
     )
