@@ -8,11 +8,11 @@ from trainer import TrainerAutoregressor, TrainerClassifier
 
 def test_autoregressor_training():
     train_dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=True, batch_size=1024
+        pretraining=True, train=True, batch_size=4
     )
 
     val_dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=False, batch_size=1024
+        pretraining=True, train=False, batch_size=4
     )
 
     # Test init_model and optimizer
@@ -21,9 +21,9 @@ def test_autoregressor_training():
         norm_pix_loss=True,
         patch_size=14 * 14,
         dtype=jnp.bfloat16,
-        num_layers=8,
-        num_heads=6,
-        embedding_dimension=768,
+        num_layers=1,
+        num_heads=1,
+        embedding_dimension=128,
         hidden_dimension=128,
         dropout_probability=0.1,
     )
@@ -51,20 +51,20 @@ def test_autoregressor_training():
 
 def test_classifier_training():
     train_dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=True, batch_size=1024
+        pretraining=False, train=True, batch_size=4
     )
 
     val_dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=False, batch_size=1024
+        pretraining=False, train=False, batch_size=4
     )
 
     trainer = TrainerClassifier(
         dummy_imgs=next(iter(train_dataloader))[0],
         dtype=jnp.bfloat16,
         num_categories=10,
-        num_layers=8,
-        num_heads=4,
-        embedding_dimension=768,
+        num_layers=1,
+        num_heads=1,
+        embedding_dimension=128,
         hidden_dimension=128,
         dropout_probability=0.1,
     )
