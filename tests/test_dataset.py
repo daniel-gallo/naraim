@@ -1,3 +1,6 @@
+from functools import wraps
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -7,6 +10,18 @@ from dataset import (
     get_fashion_mnist_dataloader,
     get_imagenet_dataloader,
 )
+
+
+# TODO: FIXME
+def ignore_if_not_on_snellius(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not Path("/scratch-nvme/ml-datasets/imagenet").exists():
+            return
+
+        return f(*args, **kwargs)
+
+    return wrapper
 
 
 @pytest.mark.parametrize("train", [True, False])
@@ -76,6 +91,7 @@ def test_collate_pretraining():
     assert np.all(resolutions == [[14, 14], [28, 28], [42, 42], [250, 250]])
 
 
+@ignore_if_not_on_snellius
 @pytest.mark.parametrize("train", [True, False])
 def test_imagenet_dataloader_pretraining(train: bool):
     batch_size = 64
@@ -93,6 +109,7 @@ def test_imagenet_dataloader_pretraining(train: bool):
     assert Y.shape[2] == patch_size
 
 
+@ignore_if_not_on_snellius
 @pytest.mark.parametrize("train", [True, False])
 def test_imagenet_dataloader_classification(train: bool):
     batch_size = 64
