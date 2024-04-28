@@ -13,27 +13,39 @@ def train_autoregressor(
     hidden_dimension,
     num_layers,
     num_heads,
+    dropout_rate,
     patch_size,
+    max_num_patches,
     dataset_name="fashion_mnist",
 ):
     train_dataloader = get_dataloader(
-        dataset_name, pretraining=True, train=True, batch_size=batch_size
+        dataset_name,
+        pretraining=True,
+        train=True,
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
     val_dataloader = get_dataloader(
-        dataset_name, pretraining=True, train=False, batch_size=batch_size
+        dataset_name,
+        pretraining=True,
+        train=False,
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
     trainer = TrainerAutoregressor(
         dummy_imgs=next(iter(train_dataloader))[0],
         norm_pix_loss=True,
         patch_size=patch_size,
-        dtype=jnp.bfloat16,
+        dtype=jnp.float32,
         num_layers=num_layers,
         num_heads=num_heads,
         embedding_dimension=embedding_dimension,
         hidden_dimension=hidden_dimension,
-        dropout_probability=0.1,
+        dropout_probability=dropout_rate,
     )
 
     trainer.train_model(train_dataloader, val_dataloader, num_epochs=num_epochs)
@@ -49,19 +61,31 @@ def train_classifier(
     num_layers,
     num_heads,
     num_categories,
+    patch_size,
+    max_num_patches,
     dataset_name="fashion_mnist",
 ):
     train_dataloader = get_dataloader(
-        dataset_name, pretraining=False, train=True, batch_size=batch_size
+        dataset_name,
+        pretraining=False,
+        train=True,
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
     val_dataloader = get_dataloader(
-        dataset_name, pretraining=False, train=False, batch_size=batch_size
+        dataset_name,
+        pretraining=False,
+        train=False,
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
     trainer = TrainerClassifier(
         dummy_imgs=next(iter(train_dataloader))[0],
-        dtype=jnp.bfloat16,
+        dtype=jnp.float32,
         num_categories=num_categories,
         num_layers=num_layers,
         num_heads=num_heads,
@@ -109,7 +133,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_heads", type=int, default=6, help="Number of attention heads"
     )
-    parser.add_argument("--patch_size", type=int, default=196, help="Patch size")
+    parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate")
+    parser.add_argument("--patch_size", type=int, default=14, help="Patch size")
+    parser.add_argument(
+        "--max_num_patches", type=int, default=256, help="Max number of patches"
+    )
+
     parser.add_argument(
         "--dataset",
         type=str,
@@ -120,16 +149,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    train_classifier(
-        args.batch_size,
-        args.epochs,
-        args.embedding_dimension,
-        args.hidden_dimension,
-        args.num_layers,
-        args.num_heads,
-        args.num_categories,
-        dataset_name=args.dataset,
-    )
     train_autoregressor(
         args.batch_size,
         args.epochs,
@@ -137,6 +156,8 @@ if __name__ == "__main__":
         args.hidden_dimension,
         args.num_layers,
         args.num_heads,
+        args.dropout_rate,
         args.patch_size,
+        args.max_num_patches,
         dataset_name=args.dataset,
     )

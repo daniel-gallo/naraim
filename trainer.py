@@ -63,24 +63,29 @@ class TrainerAutoregressor:
         """
         imgs, targets, mask: [bs, 28, 28]
         """
-        imgs, targets, mask, resolutions = batch
+        input_patches, mask, patch_indices, output_patches = batch
 
         # Normalize the target
         if self.norm_pix_loss:
-            mean = jnp.mean(targets, axis=(-2, -1), keepdims=True)  # shape [bs, 1, 1]
-            var = jnp.var(targets, axis=(-2, -1), keepdims=True)  # shape [bs, 1, 1]
-            targets = (targets - mean) / (var + 1.0e-6) ** 0.5
+            mean = jnp.mean(
+                output_patches, axis=(-2, -1), keepdims=True
+            )  # shape [bs, 1, 1]
+            var = jnp.var(
+                output_patches, axis=(-2, -1), keepdims=True
+            )  # shape [bs, 1, 1]
+            targets = (output_patches - mean) / (var + 1.0e-6) ** 0.5
 
         rng, dropout_apply_rng = random.split(rng)
 
         preds = self.model.apply(
             {"params": params},
-            imgs,
+            input_patches,
             training=train,
             mask=mask,
             rngs={"dropout": dropout_apply_rng},
         )
 
+        # TODO: don't run backprop if it's prefix or padding
         # Pixel-wise MSE
         loss = (preds - targets) ** 2  # shape = [bs, 28, 28]
         loss = jnp.mean(loss)
@@ -98,6 +103,7 @@ class TrainerAutoregressor:
         return state, rng, loss
 
     def eval_step(self, state, rng, batch):
+        # TODO: don't pass rng for evaluation
         # Return the mse for a single batch
         mse, _ = self.get_loss(
             state.params, rng, batch, train=False
