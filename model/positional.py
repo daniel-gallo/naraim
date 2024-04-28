@@ -42,6 +42,25 @@ def get_2d_positional_embedding(
 
 class PositionalEncoding(nn.Module):
     @nn.compact
-    def __call__(self, x):
-        # TODO: implement
+    def __call__(self, x, patch_indices):
+        batch_size, max_num_patches, embd_dim = x.shape
+
+        for i, (sample_height, sample_width) in enumerate(patch_indices):
+            pos_embeddings = get_2d_positional_embedding(
+                embd_dim, sample_height, sample_width
+            )
+
+            pos_embeddings = rearrange(pos_embeddings, "h w d -> (h w) d")
+            pos_embeddings = pos_embeddings[:-1, :]
+
+            pos_embeddings = jnp.pad(
+                pos_embeddings,
+                pad_width=(
+                    (0, max_num_patches - sample_height * sample_width + 1),
+                    (0, 0),
+                ),
+            )
+
+            x.at[i, :, :].add(pos_embeddings)
+
         return x

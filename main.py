@@ -16,6 +16,7 @@ def train_autoregressor(
     dropout_rate,
     patch_size,
     max_num_patches,
+    num_channels,
     dataset_name="fashion_mnist",
 ):
     train_dataloader = get_dataloader(
@@ -37,9 +38,10 @@ def train_autoregressor(
     )
 
     trainer = TrainerAutoregressor(
-        dummy_imgs=next(iter(train_dataloader))[0],
+        dummy_batch=next(iter(train_dataloader)),
         norm_pix_loss=True,
         patch_size=patch_size,
+        num_channels=num_channels,
         dtype=jnp.float32,
         num_layers=num_layers,
         num_heads=num_heads,
@@ -116,7 +118,7 @@ if __name__ == "__main__":
         default=10,
         help="Number of classification categories",
     )
-    parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument(
         "--embedding_dimension",
         type=int,
@@ -136,8 +138,10 @@ if __name__ == "__main__":
     parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate")
     parser.add_argument("--patch_size", type=int, default=14, help="Patch size")
     parser.add_argument(
-        "--max_num_patches", type=int, default=256, help="Max number of patches"
+        "--max_num_patches", type=int, default=64, help="Max number of patches"
     )
+
+    parser.add_argument("--num_channels", type=int, default=1, help="Num channels")
 
     parser.add_argument(
         "--dataset",
@@ -159,5 +163,6 @@ if __name__ == "__main__":
         args.dropout_rate,
         args.patch_size,
         args.max_num_patches,
+        args.num_channels,
         dataset_name=args.dataset,
     )

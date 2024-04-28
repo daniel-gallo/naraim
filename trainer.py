@@ -22,7 +22,7 @@ from model import ClassificationModel, PretrainingModel
 class TrainerAutoregressor:
     def __init__(
         self,
-        dummy_imgs,
+        dummy_batch,
         lr=1e-3,
         seed=42,
         log_every_n_steps=10,
@@ -42,7 +42,7 @@ class TrainerAutoregressor:
         self.model = PretrainingModel(**model_hparams)
 
         # Initialize model and logger
-        self.init_model(dummy_imgs)
+        self.init_model(dummy_batch)
         self.init_logger()
 
         # Jitting train and eval steps
@@ -52,10 +52,15 @@ class TrainerAutoregressor:
     def init_logger(self):
         self.logger = SummaryWriter(log_dir=self.log_dir)
 
-    def init_model(self, exmp_imgs):
+    def init_model(self, exmp_batch):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
+        input_patches, _, _, patch_indices, _ = exmp_batch
+
         self.init_params = self.model.init(
-            {"params": init_rng, "dropout": dropout_init_rng}, exmp_imgs, training=True
+            {"params": init_rng, "dropout": dropout_init_rng},
+            input_patches,
+            patch_indices,
+            training=True,
         )["params"]
         self.state = None
 
@@ -63,7 +68,7 @@ class TrainerAutoregressor:
         """
         imgs, targets, mask: [bs, 28, 28]
         """
-        input_patches, mask, patch_indices, output_patches = batch
+        input_patches, attn_mask, loss_mask, patch_indices, output_patches = batch
 
         # Normalize the target
         if self.norm_pix_loss:
@@ -80,14 +85,21 @@ class TrainerAutoregressor:
         preds = self.model.apply(
             {"params": params},
             input_patches,
+            patch_indices=patch_indices,
             training=train,
-            mask=mask,
+            mask=attn_mask,
             rngs={"dropout": dropout_apply_rng},
         )
 
-        # TODO: don't run backprop if it's prefix or padding
+        # TODO: Integrate positional embeddings
         # Pixel-wise MSE
-        loss = (preds - targets) ** 2  # shape = [bs, 28, 28]
+        loss = (
+            preds - targets
+        ) ** 2  # shape = [bs, max_num_paches - 1, patch_size ** 2 * num_channels]
+
+        # Apply mask on the loss so that gradients are computed
+        # after the prefixed and padding patches
+        loss = loss * loss_mask[:, :, None]
         loss = jnp.mean(loss)
 
         return loss, rng

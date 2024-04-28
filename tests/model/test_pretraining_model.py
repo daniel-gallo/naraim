@@ -15,12 +15,14 @@ def test_pretraining_model():
     embedding_dimension = 768
     hidden_dimension = 128
     dropout_probability = 0.1
+    num_channels = 1
 
     x = jnp.zeros((bs, num_patches, patch_size))
 
     pretraining_model = PretrainingModel(
         dtype=dtype,
         patch_size=patch_size,
+        num_channels=num_channels,
         num_layers=num_layers,
         num_heads=num_heads,
         embedding_dimension=embedding_dimension,
@@ -35,7 +37,7 @@ def test_pretraining_model():
     output_shape = pretraining_model.apply(
         params, x, training=True, rngs={"dropout": rng}
     ).shape
-    assert output_shape == (bs, num_patches, patch_size)
+    assert output_shape == (bs, num_patches, patch_size**2 * num_channels)
 
     # Check inference does not need rng
     pretraining_model.apply(params, x, training=False)
