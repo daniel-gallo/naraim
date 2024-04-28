@@ -9,7 +9,75 @@ from dataset import (
     collate_pretraining,
     get_fashion_mnist_dataloader,
     get_imagenet_dataloader,
+    reshape_image,
 )
+
+
+@pytest.mark.parametrize("height", [100, 224, 500])
+@pytest.mark.parametrize("width", [100, 224, 500])
+@pytest.mark.parametrize("patch_size", [14, 16])
+@pytest.mark.parametrize("max_num_patches", [256, 512])
+def test_reshape_img(height: int, width: int, patch_size: int, max_num_patches: int):
+    image = np.zeros((height, width, 3))
+    reshaped_image = reshape_image(
+        image, patch_size=patch_size, max_num_patches=max_num_patches
+    )
+
+    assert isinstance(reshaped_image, np.ndarray)
+    assert reshaped_image.dtype == np.float64
+
+    new_height, new_width, num_channels = reshaped_image.shape
+    assert new_height % patch_size == 0
+    assert new_width % patch_size == 0
+    assert num_channels == 3
+
+
+def test_collate_classification():
+    batch = [
+        (np.zeros((14, 14, 3)), 0),
+        (np.zeros((28, 28, 3)), 0),
+        (np.zeros((42, 42, 3)), 0),
+        (np.zeros((250, 250, 3)), 0),
+    ]
+    patch_size = 14
+    max_num_patches = 256
+
+    patches, patch_indices, labels = collate_classification(
+        batch, patch_size, max_num_patches
+    )
+    assert patches.shape == (len(batch), max_num_patches, patch_size**2 * 3)
+    assert patch_indices.shape == (len(batch), 2)
+    assert labels.shape == (len(batch),)
+
+
+def test_collate_pretraining():
+    batch = [
+        (np.zeros((14, 14, 3)), 0),
+        (np.zeros((28, 28, 3)), 0),
+        (np.zeros((42, 42, 3)), 0),
+        (np.zeros((250, 250, 3)), 0),
+    ]
+    batch_size = len(batch)
+    num_channels = 3
+    patch_size = 14
+    max_num_patches = 256
+
+    input_patches, mask, patch_indices, output_patches = collate_pretraining(
+        batch, patch_size, max_num_patches
+    )
+
+    assert input_patches.shape == (
+        batch_size,
+        max_num_patches - 1,
+        patch_size**2 * num_channels,
+    )
+    assert output_patches.shape == (
+        batch_size,
+        max_num_patches - 1,
+        patch_size**2 * num_channels,
+    )
+    assert mask.shape == (max_num_patches - 1, max_num_patches - 1)
+    assert patch_indices.shape == (batch_size, 2)
 
 
 # TODO: FIXME
@@ -27,18 +95,31 @@ def ignore_if_not_on_snellius(f):
 @pytest.mark.parametrize("train", [True, False])
 def test_fashion_mnist_pretraining(train: bool):
     batch_size = 1024
-    num_patches = 3
-    patch_size = 14 * 14
+    patch_size = 14
+    max_num_patches = 256
+    num_channels = 1
 
     dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=train, batch_size=batch_size
+        pretraining=True,
+        train=train,
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
-    X, Y, mask, resolutions = next(iter(dataloader))
+    input_patches, mask, patch_indices, output_patches = next(iter(dataloader))
 
-    assert X.shape == (batch_size, num_patches, patch_size)
-    assert Y.shape == (batch_size, num_patches, patch_size)
-    assert mask.shape == (num_patches, num_patches)
-    assert resolutions.shape == (batch_size, 2)
+    assert input_patches.shape == (
+        batch_size,
+        max_num_patches - 1,
+        patch_size**2 * num_channels,
+    )
+    assert output_patches.shape == (
+        batch_size,
+        max_num_patches - 1,
+        patch_size**2 * num_channels,
+    )
+    assert mask.shape == (max_num_patches - 1, max_num_patches - 1)
+    assert patch_indices.shape == (batch_size, 2)
 
     print(mask)
 
@@ -46,81 +127,75 @@ def test_fashion_mnist_pretraining(train: bool):
 @pytest.mark.parametrize("train", [True, False])
 def test_fashion_mnist_classification(train: bool):
     batch_size = 1024
-    num_patches = 4
-    patch_size = 14 * 14
+    patch_size = 14
+    max_num_patches = 256
+    num_channels = 1
 
     dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=train, batch_size=batch_size
+        pretraining=False,
+        train=train,
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
-    X, y, resolutions = next(iter(dataloader))
-    assert X.shape == (batch_size, num_patches, patch_size)
-    assert y.shape == (batch_size,)
-    assert resolutions.shape == (batch_size, 2)
-
-
-def test_collate_classification():
-    batch = [
-        (np.zeros((14, 14, 3)), 0),
-        (np.zeros((28, 28, 3)), 0),
-        (np.zeros((42, 42, 3)), 0),
-        (np.zeros((250, 250, 3)), 0),
-    ]
-
-    patched_images, labels, resolutions = collate_classification(batch)
-
-    assert patched_images.shape == (4, 289, 588)
-    assert labels.shape == (4,)
-    assert resolutions.shape == (4, 2)
-    assert np.all(resolutions == [[14, 14], [28, 28], [42, 42], [250, 250]])
-
-
-def test_collate_pretraining():
-    batch = [
-        (np.zeros((14, 14, 3)), 0),
-        (np.zeros((28, 28, 3)), 0),
-        (np.zeros((42, 42, 3)), 0),
-        (np.zeros((250, 250, 3)), 0),
-    ]
-
-    patched_images, labels, mask, resolutions = collate_pretraining(batch)
-
-    assert patched_images.shape == (4, 288, 588)
-    assert labels.shape == (4, 288, 588)
-    assert resolutions.shape == (4, 2)
-    assert mask.shape == (288, 288)
-    assert np.all(resolutions == [[14, 14], [28, 28], [42, 42], [250, 250]])
+    patches, patch_indices, labels = next(iter(dataloader))
+    assert patches.shape == (batch_size, max_num_patches, patch_size**2 * num_channels)
+    assert labels.shape == (batch_size,)
+    assert patch_indices.shape == (batch_size, 2)
 
 
 @ignore_if_not_on_snellius
-@pytest.mark.parametrize("train", [True, False])
-def test_imagenet_dataloader_pretraining(train: bool):
-    batch_size = 64
-    patch_size = 14 * 14 * 3
+def test_imagenet_dataloader_pretraining():
+    batch_size = 4
+    patch_size = 14
+    max_num_patches = 256
+    num_channels = 3
 
     dataloader = get_imagenet_dataloader(
-        pretraining=True, split="train", batch_size=batch_size
+        pretraining=True,
+        split="train",
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
-    X, Y, mask = next(iter(dataloader))
+    input_patches, mask, patch_indices, output_patches = next(iter(dataloader))
 
-    assert X.shape[0] == batch_size
-    assert X.shape[2] == patch_size
-    assert Y.shape[0] == batch_size
-    assert Y.shape[2] == patch_size
+    assert input_patches.shape == (
+        batch_size,
+        max_num_patches - 1,
+        patch_size**2 * num_channels,
+    )
+    assert output_patches.shape == (
+        batch_size,
+        max_num_patches - 1,
+        patch_size**2 * num_channels,
+    )
+    assert mask.shape == (max_num_patches - 1, max_num_patches - 1)
+    assert patch_indices.shape == (batch_size, 2)
 
 
 @ignore_if_not_on_snellius
-@pytest.mark.parametrize("train", [True, False])
-def test_imagenet_dataloader_classification(train: bool):
-    batch_size = 64
-    patch_size = 14 * 14 * 3
+def test_imagenet_dataloader_classification():
+    batch_size = 4
+    patch_size = 14
+    max_num_patches = 256
+    num_channels = 3
 
     dataloader = get_imagenet_dataloader(
-        pretraining=False, split="train", batch_size=batch_size
+        pretraining=False,
+        split="train",
+        batch_size=batch_size,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
-    X, Y, _ = next(iter(dataloader))
+    patches, patch_indices, labels = next(iter(dataloader))
 
-    assert X.shape[0] == batch_size
-    assert X.shape[2] == patch_size
-    assert Y.shape == (batch_size,)
+    assert patches.shape == (
+        batch_size,
+        max_num_patches,
+        patch_size**2 * num_channels,
+    )
+    assert patch_indices.shape == (batch_size, 2)
+    assert labels.shape == (batch_size,)

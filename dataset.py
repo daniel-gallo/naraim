@@ -1,12 +1,13 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
-import jax.numpy as jnp
 import numpy as np
+from einops import rearrange
 from PIL.Image import Image
 from torch.utils.data import DataLoader
 from torchvision.datasets import FashionMNIST
 from torchvision.datasets.folder import ImageFolder
+from torchvision.transforms import CenterCrop, Compose, Resize, ToTensor
 
 DATA_ROOT = "data"
 
@@ -17,60 +18,105 @@ def image_to_numpy(image: Image) -> np.array:
     return image
 
 
-def collate_classification(
-    batch, n_channels=3, patch_size=14, padding=0.0, num_patches_per_image=0
-):
-    batch_size = len(batch)
+def reshape_image(image: np.array, patch_size: int, max_num_patches: int) -> np.array:
+    height, width = image.shape[:2]
 
-    if not num_patches_per_image:
-        num_patches = [
-            (image.shape[0] // patch_size) * (image.shape[1] // patch_size)
-            for image, _ in batch
+    # We want to reshape the image to lambda x height, lambda x width so that
+    # the total number of (spacial) pixels is smaller than max_patches x patch_size
+    lmbd = np.sqrt(patch_size**2 * max_num_patches / (height * width))
+    resize_height = int(lmbd * height)
+    resize_width = int(lmbd * width)
+
+    # After resizing the image, the dimensions might not be divisible by patch_size
+    # so we have to take a random crop
+    crop_height = (resize_height // patch_size) * patch_size
+    crop_width = (resize_width // patch_size) * patch_size
+
+    output_image = Compose(
+        [
+            ToTensor(),
+            Resize(size=(resize_height, resize_width)),
+            CenterCrop(size=(crop_height, crop_width)),
         ]
-        num_patches_per_image = max(num_patches)
+    )(image)
 
-    patched_images = np.full(
-        shape=(batch_size, num_patches_per_image, patch_size**2 * n_channels),
-        fill_value=padding,
-        dtype=np.float32,
-    )
+    return rearrange(output_image.numpy(), "c h w -> h w c")
 
-    labels = np.zeros(batch_size, dtype=np.int16)
-    resolutions = np.zeros((batch_size, 2), dtype=np.int16)
+
+def patchify(image: np.array, patch_size: int):
+    assert image.shape[0] % patch_size == 0
+    assert image.shape[1] % patch_size == 0
+
+    for x_idx in range(image.shape[0] // patch_size):
+        for y_idx in range(image.shape[1] // patch_size):
+            patch = image[
+                x_idx * patch_size : (x_idx + 1) * patch_size,
+                y_idx * patch_size : (y_idx + 1) * patch_size,
+            ]
+            patch_idx = x_idx * (image.shape[1] // patch_size) + y_idx
+
+            yield patch_idx, patch.flatten()
+
+
+def collate(batch: List, patch_size: int, max_num_patches: int):
+    """
+    batch: list of (image: np.array<h, w, c>, label: int)
+    """
+    batch_size = len(batch)
+    first_image = batch[0][0]
+    if len(first_image.shape) == 2:
+        num_channels = 1
+    else:
+        _, _, num_channels = first_image.shape
+
+    patches = np.zeros((batch_size, max_num_patches, patch_size**2 * num_channels))
+    patch_indices = np.zeros((batch_size, 2))
+    labels = np.zeros(batch_size)
 
     for i, (image, label) in enumerate(batch):
-        for x_idx in range(image.shape[0] // patch_size):
-            for y_idx in range(image.shape[1] // patch_size):
-                patch = image[
-                    x_idx * patch_size : (x_idx + 1) * patch_size,
-                    y_idx * patch_size : (y_idx + 1) * patch_size,
-                ]
-                patch_idx = x_idx * (image.shape[1] // patch_size) + y_idx
+        reshaped_image = reshape_image(image, patch_size, max_num_patches)
+        new_height, new_width, _ = reshaped_image.shape
 
-                patched_images[i, patch_idx, :] = patch.flatten()
+        for patch_idx, patch in patchify(reshaped_image, patch_size):
+            patches[i, patch_idx, :] = patch
+
+        patch_indices[i] = [new_height // patch_size, new_width // patch_size]
 
         labels[i] = label
-        resolutions[i] = image.shape[:2]
 
-    return patched_images, labels, resolutions
+    return patches, patch_indices, labels
 
 
-def collate_pretraining(batch, n_channels=3, patch_size=14, padding=0.0):
-    patched_images, _, resolutions = collate_classification(
-        batch, n_channels, patch_size, padding
-    )
-    targets = patched_images[:, 1:, ...]
-    patched_images = patched_images[:, :-1, ...]
-    num_patches_per_image = patched_images.shape[1]
+def collate_classification(batch: List, patch_size: int, max_num_patches: int):
+    patches, patch_indices, labels = collate(batch, patch_size, max_num_patches)
+    return patches, patch_indices, labels
+
+
+def collate_pretraining(batch: List, patch_size: int, max_num_patches: int):
+    patches, patch_indices, _ = collate(batch, patch_size, max_num_patches)
+    input_patches = patches[:, :-1, :]
+    output_patches = patches[:, 1:, :]
 
     # TODO: is it tril for sure? Or is it triu?
-    # TODO: implement uniform sampling
-    mask = jnp.tril(jnp.ones((num_patches_per_image, num_patches_per_image)))
-    return patched_images, targets, mask, resolutions
+    # TODO: should prefix-sampling be per-batch of per-sample?
+    # We have to subtract two in total:
+    #  - 1 because the last patch is not passed
+    #  - 1 because we want to run gradient descent on at least one patch
+    #      (we run gradient descent in between the prefix and the padding)
+    first_dimension_with_padding = patch_indices.prod(axis=1).min() - 1
+    prefix_length = np.random.randint(low=1, high=first_dimension_with_padding - 1)
+    mask = np.tril(np.ones((max_num_patches - 1, max_num_patches - 1)))
+    mask[:prefix_length, :prefix_length] = 1
+
+    return input_patches, mask, patch_indices, output_patches
 
 
 def get_fashion_mnist_dataloader(
-    pretraining: bool, train: bool, batch_size: int = 1024
+    pretraining: bool,
+    train: bool,
+    batch_size: int,
+    patch_size: int,
+    max_num_patches: int,
 ) -> DataLoader:
     dataset = FashionMNIST(
         DATA_ROOT, train=train, transform=image_to_numpy, download=True
@@ -84,7 +130,7 @@ def get_fashion_mnist_dataloader(
         batch_size=batch_size,
         shuffle=shuffle,
         drop_last=True,
-        collate_fn=lambda batch: collate_fn(batch, n_channels=1),
+        collate_fn=lambda batch: collate_fn(batch, patch_size, max_num_patches),
     )
 
     return dataloader
@@ -140,6 +186,8 @@ def get_imagenet_dataloader(
     pretraining: bool,
     split: str,
     batch_size: int,
+    patch_size: int,
+    max_num_patches: int,
 ):
     dataset = get_imagenet_dataset(split)
 
@@ -151,7 +199,7 @@ def get_imagenet_dataloader(
         batch_size=batch_size,
         shuffle=shuffle,
         drop_last=True,
-        collate_fn=collate_fn,
+        collate_fn=lambda batch: collate_fn(batch, patch_size, max_num_patches),
     )
 
     return dataloader
