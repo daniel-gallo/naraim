@@ -5,6 +5,9 @@ from jax import numpy as jnp
 
 
 def get_1d_positional_embedding(embedding_dimension: int, max_length: int) -> jax.Array:
+    """
+    The output is an array of shape (max_length, embedding_dimension)
+    """
     positions = jnp.arange(max_length)
 
     dimensions = jnp.arange(embedding_dimension // 2)
@@ -26,6 +29,9 @@ def get_1d_positional_embedding(embedding_dimension: int, max_length: int) -> ja
 def get_2d_positional_embedding(
     embedding_dimension: int, height: int, width: int
 ) -> jax.Array:
+    """
+    The output is an array of shape (height, width, embedding_dimension)
+    """
     assert embedding_dimension % 2 == 0
 
     height_embedding = get_1d_positional_embedding(embedding_dimension // 2, height)
@@ -41,26 +47,28 @@ def get_2d_positional_embedding(
 
 
 class PositionalEncoding(nn.Module):
-    @nn.compact
+    embedding_dimension: int
+    max_num_patches: int
+
+    def setup(self):
+        self.positional_encoding = get_2d_positional_embedding(
+            embedding_dimension=self.embedding_dimension,
+            height=self.max_num_patches,
+            width=self.max_num_patches,
+        )
+
     def __call__(self, x, patch_indices):
-        batch_size, max_num_patches, embd_dim = x.shape
-
-        for i, (sample_height, sample_width) in enumerate(patch_indices):
-            pos_embeddings = get_2d_positional_embedding(
-                embd_dim, sample_height, sample_width
-            )
-
-            pos_embeddings = rearrange(pos_embeddings, "h w d -> (h w) d")
-            pos_embeddings = pos_embeddings[:-1, :]
-
-            pos_embeddings = jnp.pad(
-                pos_embeddings,
-                pad_width=(
-                    (0, max_num_patches - sample_height * sample_width + 1),
-                    (0, 0),
-                ),
-            )
-
-            x.at[i, :, :].add(pos_embeddings)
+        # x is (batch_size, num_patches, embedding_dimension)
+        # patch_indices is (batch_size, num_patches, 2)
+        # self.positional_encoding is (num_patches, num_patches, embedding_dimension)
+        # TODO: vectorize
+        batch_size, num_patches, _ = x.shape
+        for b in range(batch_size):
+            for p in range(num_patches):
+                x = x.at[b, p].add(
+                    self.positional_encoding[
+                        patch_indices[b, p, 0], patch_indices[b, p, 1]
+                    ]
+                )
 
         return x

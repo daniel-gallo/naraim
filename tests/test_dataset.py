@@ -37,7 +37,7 @@ def test_collate_classification():
         (np.zeros((14, 14, 3)), 0),
         (np.zeros((28, 28, 3)), 0),
         (np.zeros((42, 42, 3)), 0),
-        (np.zeros((250, 250, 3)), 0),
+        (np.zeros((100, 200, 3)), 0),
     ]
     patch_size = 14
     max_num_patches = 256
@@ -45,9 +45,20 @@ def test_collate_classification():
     patches, patch_indices, labels = collate_classification(
         batch, patch_size, max_num_patches
     )
+
     assert patches.shape == (len(batch), max_num_patches, patch_size**2 * 3)
-    assert patch_indices.shape == (len(batch), 2)
+    assert patch_indices.shape == (len(batch), max_num_patches, 2)
     assert labels.shape == (len(batch),)
+
+    # The first image is square, so it should have 16 x 16 patches
+    assert np.all(patch_indices[0][0] == [0, 0])
+    assert np.all(patch_indices[0][1] == [0, 1])
+    assert np.all(patch_indices[0][-1] == [15, 15])
+
+    # The last image does not fit perfectly, so the last patches should be padding
+    assert np.all(patch_indices[-1][0] == [0, 0])
+    assert np.all(patch_indices[-1][1] == [0, 1])
+    assert np.all(patch_indices[-1][-1] == [0, 0])
 
 
 def test_collate_pretraining():
@@ -55,15 +66,15 @@ def test_collate_pretraining():
         (np.zeros((14, 14, 3)), 0),
         (np.zeros((28, 28, 3)), 0),
         (np.zeros((42, 42, 3)), 0),
-        (np.zeros((250, 250, 3)), 0),
+        (np.zeros((100, 200, 3)), 0),
     ]
     batch_size = len(batch)
     num_channels = 3
     patch_size = 14
     max_num_patches = 256
 
-    input_patches, mask, patch_indices, output_patches = collate_pretraining(
-        batch, patch_size, max_num_patches
+    input_patches, attention_mask, loss_mask, patch_indices, output_patches = (
+        collate_pretraining(batch, patch_size, max_num_patches)
     )
 
     assert input_patches.shape == (
@@ -76,8 +87,25 @@ def test_collate_pretraining():
         max_num_patches - 1,
         patch_size**2 * num_channels,
     )
-    assert mask.shape == (max_num_patches - 1, max_num_patches - 1)
-    assert patch_indices.shape == (batch_size, 2)
+    assert attention_mask.shape == (max_num_patches - 1, max_num_patches - 1)
+    assert loss_mask.shape == (batch_size, max_num_patches - 1)
+    assert patch_indices.shape == (batch_size, max_num_patches - 1, 2)
+
+    # The attention mask should be tril + square on the lop left corner
+    prefix_length = np.argmin(attention_mask[0])
+    expected_attention_mask = np.tril(
+        np.ones((max_num_patches - 1, max_num_patches - 1))
+    )
+    expected_attention_mask[:prefix_length, :prefix_length] = 1
+    assert np.allclose(expected_attention_mask, attention_mask)
+
+    # The loss mask should hide the prefix...
+    assert np.allclose(loss_mask[:, :prefix_length], 0)
+    # ... and the padding (the last image does not fit perfectly)
+    assert np.allclose(loss_mask[-1, -13:], 0)
+    # (the rest should be ones)
+    assert np.allclose(loss_mask[:, prefix_length:-13], 1)
+    assert np.allclose(loss_mask[:-1, prefix_length:], 1)
 
 
 # TODO: FIXME
@@ -106,7 +134,9 @@ def test_fashion_mnist_pretraining(train: bool):
         patch_size=patch_size,
         max_num_patches=max_num_patches,
     )
-    input_patches, mask, patch_indices, output_patches = next(iter(dataloader))
+    input_patches, attention_mask, loss_mask, patch_indices, output_patches = next(
+        iter(dataloader)
+    )
 
     assert input_patches.shape == (
         batch_size,
@@ -118,10 +148,9 @@ def test_fashion_mnist_pretraining(train: bool):
         max_num_patches - 1,
         patch_size**2 * num_channels,
     )
-    assert mask.shape == (max_num_patches - 1, max_num_patches - 1)
-    assert patch_indices.shape == (batch_size, 2)
-
-    print(mask)
+    assert attention_mask.shape == (max_num_patches - 1, max_num_patches - 1)
+    assert loss_mask.shape == (batch_size, max_num_patches - 1)
+    assert patch_indices.shape == (batch_size, max_num_patches - 1, 2)
 
 
 @pytest.mark.parametrize("train", [True, False])
@@ -141,7 +170,7 @@ def test_fashion_mnist_classification(train: bool):
     patches, patch_indices, labels = next(iter(dataloader))
     assert patches.shape == (batch_size, max_num_patches, patch_size**2 * num_channels)
     assert labels.shape == (batch_size,)
-    assert patch_indices.shape == (batch_size, 2)
+    assert patch_indices.shape == (batch_size, max_num_patches, 2)
 
 
 @ignore_if_not_on_snellius
@@ -159,7 +188,9 @@ def test_imagenet_dataloader_pretraining():
         max_num_patches=max_num_patches,
     )
 
-    input_patches, mask, patch_indices, output_patches = next(iter(dataloader))
+    input_patches, attention_mask, loss_mask, patch_indices, output_patches = next(
+        iter(dataloader)
+    )
 
     assert input_patches.shape == (
         batch_size,
@@ -171,8 +202,9 @@ def test_imagenet_dataloader_pretraining():
         max_num_patches - 1,
         patch_size**2 * num_channels,
     )
-    assert mask.shape == (max_num_patches - 1, max_num_patches - 1)
-    assert patch_indices.shape == (batch_size, 2)
+    assert attention_mask.shape == (max_num_patches - 1, max_num_patches - 1)
+    assert loss_mask.shape == (batch_size, max_num_patches - 1)
+    assert patch_indices.shape == (batch_size, max_num_patches - 1, 2)
 
 
 @ignore_if_not_on_snellius
@@ -191,11 +223,6 @@ def test_imagenet_dataloader_classification():
     )
 
     patches, patch_indices, labels = next(iter(dataloader))
-
-    assert patches.shape == (
-        batch_size,
-        max_num_patches,
-        patch_size**2 * num_channels,
-    )
-    assert patch_indices.shape == (batch_size, 2)
+    assert patches.shape == (batch_size, max_num_patches, patch_size**2 * num_channels)
     assert labels.shape == (batch_size,)
+    assert patch_indices.shape == (batch_size, max_num_patches, 2)

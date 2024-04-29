@@ -21,6 +21,7 @@ class PretrainingHead(nn.Module):
 class PretrainingModel(nn.Module):
     dtype: jnp.dtype
     patch_size: int
+    max_num_patches: int
     num_channels: int
     num_layers: int
     num_heads: int
@@ -33,7 +34,10 @@ class PretrainingModel(nn.Module):
         x = InitialProjection(
             dtype=self.dtype, embedding_dimension=self.embedding_dimension
         )(x)
-        x = PositionalEncoding()(x, patch_indices)
+        x = PositionalEncoding(
+            embedding_dimension=self.embedding_dimension,
+            max_num_patches=self.max_num_patches,
+        )(x, patch_indices)
         x = Transformer(
             dtype=self.dtype,
             num_layers=self.num_layers,

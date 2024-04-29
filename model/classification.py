@@ -32,6 +32,7 @@ class ClassificationHead(nn.Module):
 
 class ClassificationModel(nn.Module):
     dtype: jnp.dtype
+    max_num_patches: int
     num_categories: int
     num_layers: int
     num_heads: int
@@ -40,11 +41,14 @@ class ClassificationModel(nn.Module):
     dropout_probability: float
 
     @nn.compact
-    def __call__(self, x, training: bool):
+    def __call__(self, x, patch_indices, training: bool):
         x = InitialProjection(
             dtype=self.dtype, embedding_dimension=self.embedding_dimension
         )(x)
-        x = PositionalEncoding()(x)
+        x = PositionalEncoding(
+            embedding_dimension=self.embedding_dimension,
+            max_num_patches=self.max_num_patches,
+        )(x, patch_indices)
         x = Transformer(
             dtype=self.dtype,
             num_layers=self.num_layers,

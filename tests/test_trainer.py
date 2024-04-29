@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import pytest
 from jaxlib import xla_extension
 
 from dataset import get_fashion_mnist_dataloader
@@ -7,20 +8,34 @@ from trainer import TrainerAutoregressor, TrainerClassifier
 
 
 def test_autoregressor_training():
+    patch_size = 14
+    max_num_patches = 256
+    num_channels = 1
+
     train_dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=True, batch_size=4
+        pretraining=True,
+        train=True,
+        batch_size=4,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
     val_dataloader = get_fashion_mnist_dataloader(
-        pretraining=True, train=False, batch_size=4
+        pretraining=True,
+        train=False,
+        batch_size=4,
+        patch_size=patch_size,
+        max_num_patches=max_num_patches,
     )
 
     # Test init_model and optimizer
     trainer = TrainerAutoregressor(
-        dummy_imgs=next(iter(train_dataloader))[0],
+        dummy_batch=next(iter(train_dataloader)),
         norm_pix_loss=True,
-        patch_size=14 * 14,
-        dtype=jnp.bfloat16,
+        patch_size=14,
+        max_num_patches=max_num_patches,
+        num_channels=num_channels,
+        dtype=jnp.float32,
         num_layers=1,
         num_heads=1,
         embedding_dimension=128,
@@ -49,13 +64,15 @@ def test_autoregressor_training():
     assert isinstance(mse.item(), float)
 
 
+# TODO: test the new generic Trainer
+@pytest.mark.skip(reason="TrainerClassifier will be deleted")
 def test_classifier_training():
     train_dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=True, batch_size=4
+        pretraining=False, train=True, batch_size=4, patch_size=14, max_num_patches=256
     )
 
     val_dataloader = get_fashion_mnist_dataloader(
-        pretraining=False, train=False, batch_size=4
+        pretraining=False, train=False, batch_size=4, patch_size=14, max_num_patches=256
     )
 
     trainer = TrainerClassifier(

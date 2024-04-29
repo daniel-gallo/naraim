@@ -70,7 +70,7 @@ def collate(batch: List, patch_size: int, max_num_patches: int):
         _, _, num_channels = first_image.shape
 
     patches = np.zeros((batch_size, max_num_patches, patch_size**2 * num_channels))
-    patch_indices = np.zeros((batch_size, 2), dtype=int)
+    patch_indices = np.zeros((batch_size, max_num_patches, 2), dtype=int)
     labels = np.zeros(batch_size)
 
     for i, (image, label) in enumerate(batch):
@@ -80,7 +80,15 @@ def collate(batch: List, patch_size: int, max_num_patches: int):
         for patch_idx, patch in patchify(reshaped_image, patch_size):
             patches[i, patch_idx, :] = patch
 
-        patch_indices[i] = [new_height // patch_size, new_width // patch_size]
+        sample_indices = rearrange(
+            np.meshgrid(
+                np.arange(new_height // patch_size),
+                np.arange(new_width // patch_size),
+                indexing="ij",
+            ),
+            "t h w -> (h w) t",
+        )
+        patch_indices[i, : len(sample_indices)] = sample_indices
 
         labels[i] = label
 
@@ -95,6 +103,7 @@ def collate_classification(batch: List, patch_size: int, max_num_patches: int):
 def collate_pretraining(batch: List, patch_size: int, max_num_patches: int):
     patches, patch_indices, _ = collate(batch, patch_size, max_num_patches)
     input_patches = patches[:, :-1, :]
+    patch_indices = patch_indices[:, :-1, :]
     output_patches = patches[:, 1:, :]
 
     # TODO: is it tril for sure? Or is it triu?
@@ -103,21 +112,19 @@ def collate_pretraining(batch: List, patch_size: int, max_num_patches: int):
     #  - 1 because the last patch is not passed
     #  - 1 because we want to run gradient descent on at least one patch
     #      (we run gradient descent in between the prefix and the padding)
-    first_dimension_with_padding = patch_indices.prod(axis=1).min().astype(int) - 1
+    num_patches = (patch_indices.max(axis=1) + 1).prod(axis=1)
+    first_dimension_with_padding = num_patches.min() - 1
     prefix_length = np.random.randint(low=1, high=first_dimension_with_padding - 1)
-    attn_mask = np.tril(np.ones((max_num_patches - 1, max_num_patches - 1)))
-    attn_mask[:prefix_length, :prefix_length] = 1
+    attention_mask = np.tril(np.ones((max_num_patches - 1, max_num_patches - 1)))
+    attention_mask[:prefix_length, :prefix_length] = 1
 
     loss_mask = np.ones((len(input_patches), max_num_patches - 1))
-
-    num_patches = patch_indices.prod(axis=1).astype(int) - 1
-    prefix_length = np.argmin(attn_mask[0])
     loss_mask[:, :prefix_length] = 0
 
     for i, idx in enumerate(num_patches):
         loss_mask[i, idx:] = 0
 
-    return input_patches, attn_mask, loss_mask, patch_indices, output_patches
+    return input_patches, attention_mask, loss_mask, patch_indices, output_patches
 
 
 def get_fashion_mnist_dataloader(

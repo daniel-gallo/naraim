@@ -41,6 +41,7 @@ def train_autoregressor(
         dummy_batch=next(iter(train_dataloader)),
         norm_pix_loss=True,
         patch_size=patch_size,
+        max_num_patches=max_num_patches,
         num_channels=num_channels,
         dtype=jnp.float32,
         num_layers=num_layers,
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate")
     parser.add_argument("--patch_size", type=int, default=14, help="Patch size")
     parser.add_argument(
-        "--max_num_patches", type=int, default=64, help="Max number of patches"
+        "--max_num_patches", type=int, default=256, help="Max number of patches"
     )
 
     parser.add_argument("--num_channels", type=int, default=1, help="Num channels")
