@@ -23,10 +23,10 @@ class TrainerAutoregressor:
     def __init__(
         self,
         dummy_batch,
-        lr=1e-3,
-        seed=42,
-        log_every_n_steps=10,
-        norm_pix_loss=False,
+        lr,
+        seed,
+        log_every_n_steps,
+        norm_pix_loss,
         **model_hparams,
     ):
         super().__init__()
@@ -211,9 +211,7 @@ class TrainerAutoregressor:
 
 
 class TrainerClassifier:
-    def __init__(
-        self, dummy_imgs, lr=1e-3, seed=42, log_every_n_steps=10, **model_hparams
-    ):
+    def __init__(self, dummy_batch, lr, seed, log_every_n_steps, **model_hparams):
         super().__init__()
         self.lr = lr
         self.seed = seed
@@ -226,7 +224,7 @@ class TrainerClassifier:
         self.model = ClassificationModel(**model_hparams)
 
         # Initialize model and logger
-        self.init_model(dummy_imgs)
+        self.init_model(dummy_batch)
         self.init_logger()
 
         # Jitting train and eval steps
@@ -236,19 +234,25 @@ class TrainerClassifier:
     def init_logger(self):
         self.logger = SummaryWriter(log_dir=self.log_dir)
 
-    def init_model(self, exmp_imgs):
+    def init_model(self, exmp_batch):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
+        patches, patch_indices, _ = exmp_batch
+
         self.init_params = self.model.init(
-            {"params": init_rng, "dropout": dropout_init_rng}, exmp_imgs, training=True
+            {"params": init_rng, "dropout": dropout_init_rng},
+            patches,
+            patch_indices,
+            training=True,
         )["params"]
         self.state = None
 
     def get_loss(self, params, rng, batch, train):
-        imgs, labels, resolutions = batch
+        imgs, patch_indices, labels = batch
         rng, dropout_apply_rng = random.split(rng)
         logits = self.model.apply(
             {"params": params},
             imgs,
+            patch_indices,
             training=train,
             rngs={"dropout": dropout_apply_rng},
         )

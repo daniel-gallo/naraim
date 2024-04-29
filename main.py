@@ -7,17 +7,21 @@ from trainer import TrainerAutoregressor, TrainerClassifier
 
 
 def train_autoregressor(
-    batch_size,
-    num_epochs,
-    embedding_dimension,
-    hidden_dimension,
-    num_layers,
-    num_heads,
-    dropout_rate,
-    patch_size,
-    max_num_patches,
-    num_channels,
-    dataset_name="fashion_mnist",
+    batch_size: int,
+    num_epochs: int,
+    lr: float,
+    seed: int,
+    log_every_n_steps: int,
+    norm_pix_loss: bool,
+    embedding_dimension: int,
+    hidden_dimension: int,
+    num_layers: int,
+    num_heads: int,
+    dropout_rate: float,
+    patch_size: int,
+    max_num_patches: int,
+    num_channels: int,
+    dataset_name: str,
 ):
     train_dataloader = get_dataloader(
         dataset_name,
@@ -39,7 +43,10 @@ def train_autoregressor(
 
     trainer = TrainerAutoregressor(
         dummy_batch=next(iter(train_dataloader)),
-        norm_pix_loss=True,
+        lr=lr,
+        seed=seed,
+        log_every_n_steps=log_every_n_steps,
+        norm_pix_loss=norm_pix_loss,
         patch_size=patch_size,
         max_num_patches=max_num_patches,
         num_channels=num_channels,
@@ -57,16 +64,19 @@ def train_autoregressor(
 
 
 def train_classifier(
-    batch_size,
-    num_epochs,
-    embedding_dimension,
-    hidden_dimension,
-    num_layers,
-    num_heads,
-    num_categories,
-    patch_size,
-    max_num_patches,
-    dataset_name="fashion_mnist",
+    batch_size: int,
+    num_epochs: int,
+    lr: float,
+    seed: int,
+    log_every_n_steps: int,
+    embedding_dimension: int,
+    hidden_dimension: int,
+    num_layers: int,
+    num_heads: int,
+    num_categories: int,
+    patch_size: int,
+    max_num_patches: int,
+    dataset_name: str,
 ):
     train_dataloader = get_dataloader(
         dataset_name,
@@ -87,8 +97,12 @@ def train_classifier(
     )
 
     trainer = TrainerClassifier(
-        dummy_imgs=next(iter(train_dataloader))[0],
+        dummy_batch=next(iter(train_dataloader)),
+        lr=lr,
+        seed=seed,
+        log_every_n_steps=log_every_n_steps,
         dtype=jnp.float32,
+        max_num_patches=max_num_patches,
         num_categories=num_categories,
         num_layers=num_layers,
         num_heads=num_heads,
@@ -106,11 +120,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train model")
 
     parser.add_argument("--epochs", type=int, required=True, help="Number of epochs")
+
     parser.add_argument(
-        "--train_classifier", action="store_true", help="Train classifier"
-    )
-    parser.add_argument(
-        "--train_autoregressor", action="store_true", help="Train autoregressor"
+        "--training",
+        type=str,
+        default="autoregressor",
+        choices=["classifier", "autoregressor"],
+        help="What to train",
     )
 
     parser.add_argument(
@@ -119,7 +135,7 @@ if __name__ == "__main__":
         default=10,
         help="Number of classification categories",
     )
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
     parser.add_argument(
         "--embedding_dimension",
         type=int,
@@ -142,6 +158,21 @@ if __name__ == "__main__":
         "--max_num_patches", type=int, default=256, help="Max number of patches"
     )
 
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--seed", type=int, default=42, help="Seed")
+    parser.add_argument(
+        "--norm_pix_loss",
+        type=bool,
+        default=True,
+        help="Whether to use a normalized-pixel loss",
+    )
+    parser.add_argument(
+        "--log_every_n_steps",
+        type=int,
+        default=10,
+        help="Number of steps until next logging",
+    )
+
     parser.add_argument("--num_channels", type=int, default=1, help="Num channels")
 
     parser.add_argument(
@@ -154,16 +185,38 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    train_autoregressor(
-        args.batch_size,
-        args.epochs,
-        args.embedding_dimension,
-        args.hidden_dimension,
-        args.num_layers,
-        args.num_heads,
-        args.dropout_rate,
-        args.patch_size,
-        args.max_num_patches,
-        args.num_channels,
-        dataset_name=args.dataset,
-    )
+    if args.training == "autoregressor":
+        train_autoregressor(
+            args.batch_size,
+            args.epochs,
+            args.lr,
+            args.seed,
+            args.log_every_n_steps,
+            args.norm_pix_loss,
+            args.embedding_dimension,
+            args.hidden_dimension,
+            args.num_layers,
+            args.num_heads,
+            args.dropout_rate,
+            args.patch_size,
+            args.max_num_patches,
+            args.num_channels,
+            args.dataset,
+        )
+
+    elif args.training == "classifier":
+        train_classifier(
+            args.batch_size,
+            args.epochs,
+            args.lr,
+            args.seed,
+            args.log_every_n_steps,
+            args.embedding_dimension,
+            args.hidden_dimension,
+            args.num_layers,
+            args.num_heads,
+            args.num_categories,
+            args.patch_size,
+            args.max_num_patches,
+            args.dataset,
+        )
