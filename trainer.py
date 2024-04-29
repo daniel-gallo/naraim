@@ -98,7 +98,7 @@ class TrainerAutoregressor:
         ) ** 2  # shape = [bs, max_num_paches - 1, patch_size ** 2 * num_channels]
 
         # Apply mask on the loss so that gradients are computed
-        # after the prefixed and padding patches
+        # for the patches that are between the prefixed and padding patches
         loss = loss * loss_mask[:, :, None]
         loss = jnp.mean(loss)
 
