@@ -51,6 +51,10 @@ class PositionalEncoding(nn.Module):
     max_num_patches: int
 
     def setup(self):
+        """
+        self.positional_encoding: Array of shape (num_patches, num_patches, 2)
+        """
+
         self.positional_encoding = get_2d_positional_embedding(
             embedding_dimension=self.embedding_dimension,
             height=self.max_num_patches,
@@ -58,10 +62,13 @@ class PositionalEncoding(nn.Module):
         )
 
     def __call__(self, x, patch_indices):
-        # x is (batch_size, num_patches, embedding_dimension)
-        # patch_indices is (batch_size, num_patches, 2)
-        # self.positional_encoding is (num_patches, num_patches, embedding_dimension)
-        # TODO: vectorize
+        """
+        Input:
+            x: Array of shape (batch_size, num_patches, embedding_dimension)
+            patch_indices: Array of shape (batch_size, num_patches, 2)
+        Output:
+            x: Array of shape (batch_size, num_patches, embedding_dimension)
+        """
         positions = self.positional_encoding[
             patch_indices[:, :, 0], patch_indices[:, :, 1]
         ]
