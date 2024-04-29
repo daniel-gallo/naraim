@@ -71,7 +71,7 @@ def collate(batch: List, patch_size: int, max_num_patches: int):
 
     patches = np.zeros((batch_size, max_num_patches, patch_size**2 * num_channels))
     patch_indices = np.zeros((batch_size, max_num_patches, 2), dtype=int)
-    labels = np.zeros(batch_size)
+    labels = np.zeros(batch_size, dtype=int)
 
     for i, (image, label) in enumerate(batch):
         reshaped_image = reshape_image(image, patch_size, max_num_patches)
