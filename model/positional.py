@@ -62,13 +62,9 @@ class PositionalEncoding(nn.Module):
         # patch_indices is (batch_size, num_patches, 2)
         # self.positional_encoding is (num_patches, num_patches, embedding_dimension)
         # TODO: vectorize
-        batch_size, num_patches, _ = x.shape
-        for b in range(batch_size):
-            for p in range(num_patches):
-                x = x.at[b, p].add(
-                    self.positional_encoding[
-                        patch_indices[b, p, 0], patch_indices[b, p, 1]
-                    ]
-                )
+        positions = self.positional_encoding[
+            patch_indices[:, :, 0], patch_indices[:, :, 1]
+        ]
+        x = x + positions
 
         return x
