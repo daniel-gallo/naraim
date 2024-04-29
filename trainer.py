@@ -80,7 +80,12 @@ class TrainerAutoregressor:
             )  # shape [bs, 1, 1]
             targets = (output_patches - mean) / (var + 1.0e-6) ** 0.5
 
-        rng, dropout_apply_rng = random.split(rng)
+        # Apply rng only for training
+        if train:
+            rng, dropout_apply_rng = random.split(rng)
+            rngs = {"dropout": dropout_apply_rng}
+        else:
+            rngs = None
 
         preds = self.model.apply(
             {"params": params},
@@ -88,7 +93,7 @@ class TrainerAutoregressor:
             patch_indices=patch_indices,
             training=train,
             mask=attn_mask,
-            rngs={"dropout": dropout_apply_rng},
+            rngs=rngs,
         )
 
         # TODO: Integrate positional embeddings
@@ -114,11 +119,11 @@ class TrainerAutoregressor:
         state = state.apply_gradients(grads=grads)
         return state, rng, loss
 
-    def eval_step(self, state, rng, batch):
+    def eval_step(self, state, batch):
         # TODO: don't pass rng for evaluation
         # Return the mse for a single batch
         mse, _ = self.get_loss(
-            state.params, rng, batch, train=False
+            state.params, self.rng, batch, train=False
         )  # fixed rng when evaluating model
         return mse
 
@@ -181,10 +186,10 @@ class TrainerAutoregressor:
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg mse
         total_mse, count = 0, 0
-        eval_rng = jax.random.PRNGKey(self.seed)
+        # eval_rng = jax.random.PRNGKey(self.seed)
 
         for batch in data_loader:
-            mse = self.eval_step(self.state, eval_rng, batch)
+            mse = self.eval_step(self.state, batch)
             total_mse += mse * batch[0].shape[0]
             count += batch[0].shape[0]
 

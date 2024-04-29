@@ -63,8 +63,7 @@ def test_autoregressor_training():
     assert isinstance(loss.item(), float)
 
     # Test eval_step
-    rng = jax.random.PRNGKey(42)
-    mse = trainer.eval_step(trainer.state, rng, next(iter(val_dataloader)))
+    mse = trainer.eval_step(trainer.state, next(iter(val_dataloader)))
     assert isinstance(mse, xla_extension.ArrayImpl)
     assert mse.size == 1
     assert isinstance(mse.item(), float)
