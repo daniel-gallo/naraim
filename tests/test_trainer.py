@@ -11,6 +11,9 @@ def test_autoregressor_training():
     patch_size = 14
     max_num_patches = 256
     num_channels = 1
+    lr = 1e-3
+    seed = 42
+    log_every_n_steps = 10
 
     train_dataloader = get_fashion_mnist_dataloader(
         pretraining=True,
@@ -31,6 +34,9 @@ def test_autoregressor_training():
     # Test init_model and optimizer
     trainer = TrainerAutoregressor(
         dummy_batch=next(iter(train_dataloader)),
+        lr=lr,
+        seed=seed,
+        log_every_n_steps=log_every_n_steps,
         norm_pix_loss=True,
         patch_size=14,
         max_num_patches=max_num_patches,
