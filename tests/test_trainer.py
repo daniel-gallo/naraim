@@ -1,10 +1,8 @@
-import jax
 import jax.numpy as jnp
-import pytest
 from jaxlib import xla_extension
 
 from dataset import get_fashion_mnist_dataloader
-from trainer import TrainerAutoregressor, TrainerClassifier
+from trainer import Trainer
 
 
 def test_autoregressor_training():
@@ -32,7 +30,8 @@ def test_autoregressor_training():
     )
 
     # Test init_model and optimizer
-    trainer = TrainerAutoregressor(
+    trainer = Trainer(
+        model_type="autoregressor",
         dummy_batch=next(iter(train_dataloader)),
         lr=lr,
         seed=seed,
@@ -56,8 +55,10 @@ def test_autoregressor_training():
     output = trainer.train_step(
         trainer.state, trainer.rng, next(iter(train_dataloader))
     )
-    assert len(output) == 3
-    _, _, loss = output  # state, rng, loss
+    assert len(output) == 2
+
+    state, aux_output = output
+    loss, rng = aux_output
     assert isinstance(loss, xla_extension.ArrayImpl)
     assert loss.size == 1
     assert isinstance(loss.item(), float)
@@ -69,9 +70,14 @@ def test_autoregressor_training():
     assert isinstance(mse.item(), float)
 
 
-# TODO: test the new generic Trainer
-@pytest.mark.skip(reason="TrainerClassifier will be deleted")
+# @pytest.mark.skip(reason="TrainerClassifier will be deleted")
 def test_classifier_training():
+    max_num_patches = 256
+    num_categories = 10
+    lr = 1e-3
+    seed = 42
+    log_every_n_steps = 10
+
     train_dataloader = get_fashion_mnist_dataloader(
         pretraining=False, train=True, batch_size=4, patch_size=14, max_num_patches=256
     )
@@ -80,10 +86,17 @@ def test_classifier_training():
         pretraining=False, train=False, batch_size=4, patch_size=14, max_num_patches=256
     )
 
-    trainer = TrainerClassifier(
-        dummy_imgs=next(iter(train_dataloader))[0],
-        dtype=jnp.bfloat16,
-        num_categories=10,
+    # Test init_model and optimizer
+    trainer = Trainer(
+        model_type="classifier",
+        dummy_batch=next(iter(train_dataloader)),
+        lr=lr,
+        seed=seed,
+        log_every_n_steps=log_every_n_steps,
+        norm_pix_loss=True,
+        max_num_patches=max_num_patches,
+        dtype=jnp.float32,
+        num_categories=num_categories,
         num_layers=1,
         num_heads=1,
         embedding_dimension=128,
@@ -99,16 +112,16 @@ def test_classifier_training():
     output = trainer.train_step(
         trainer.state, trainer.rng, next(iter(train_dataloader))
     )
-    assert len(output) == 4
-    _, _, loss, acc = output  # state, rng, loss, acc
+    assert len(output) == 2
+    state, aux_output = output  # state, loss, rng, acc
+    loss, rng, acc = aux_output
     assert isinstance(loss, xla_extension.ArrayImpl)
     assert loss.size == 1
     assert isinstance(loss.item(), float)
     assert acc >= 0 and acc <= 1
 
     # Test eval_step
-    rng = jax.random.PRNGKey(42)
-    acc = trainer.eval_step(trainer.state, rng, next(iter(val_dataloader)))
+    acc = trainer.eval_step(trainer.state, next(iter(val_dataloader)))
     assert isinstance(acc, xla_extension.ArrayImpl)
     assert acc.size == 1
     assert isinstance(acc.item(), float)
