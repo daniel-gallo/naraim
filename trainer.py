@@ -187,6 +187,7 @@ class Trainer:
         output = self.get_loss(state.params, self.rng, batch, train=False)
 
         metric = output[0] if self.model_type == "autoregressor" else output[1][-1]
+
         return metric
 
     def train_epoch(self, train_loader, epoch):
@@ -226,7 +227,6 @@ class Trainer:
         hparams_dict = {"learning_rate": self.lr, "seed": self.seed}
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
-        print(metric_to_eval)
         best_metrics = {
             f"Best_{metric_to_eval}/train": None,
             f"Best_{metric_to_eval}/val": None,
@@ -271,7 +271,8 @@ class Trainer:
             total_val += val * batch[0].shape[0]
             count += batch[0].shape[0]
 
-        res = (val / count).item()
+        res = (total_val / count).item()
+
         return res
 
     def save_model(self, step):
