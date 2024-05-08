@@ -1,6 +1,8 @@
 import argparse
 
 import jax.numpy as jnp
+import numpy as np
+import torch
 
 from dataset import get_dataloader
 from trainer import Trainer
@@ -202,6 +204,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     if args.model_type == "autoregressor":
         train_autoregressor(

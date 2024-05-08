@@ -17,8 +17,6 @@ from model import ClassificationModel, PretrainingModel
 # TODO: Adding lr scheduler / weight decay?
 # TODO: Train/val/test split. Currently, there're only train and validation dataloaders
 
-# TODO: Implementing a generic Trainer class
-
 
 class Trainer:
     def __init__(
