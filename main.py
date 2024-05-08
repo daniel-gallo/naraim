@@ -1,8 +1,12 @@
 import argparse
+import os
+from functools import partial
+from glob import glob
 
 import jax.numpy as jnp
+import tensorflow as tf
 
-from dataset import get_dataloader
+from dataset import get_training_dataset, get_val_dataset
 from trainer import Trainer
 
 
@@ -24,26 +28,51 @@ def train_autoregressor(
     num_channels: int,
     dataset_name: str,
 ):
-    train_dataloader = get_dataloader(
-        dataset_name,
-        pretraining=True,
-        train=True,
-        batch_size=batch_size,
-        patch_size=patch_size,
-        max_num_patches=max_num_patches,
-    )
+    image_dir = "./tfrecords_imagenet_"
+    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
+    val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
+    train_dataset, num_train_batches = get_training_dataset(train_files, batch_size)
+    val_dataset, num_val_batches = get_val_dataset(val_files, batch_size)
 
-    val_dataloader = get_dataloader(
-        dataset_name,
-        pretraining=True,
-        train=False,
-        batch_size=batch_size,
-        patch_size=patch_size,
-        max_num_patches=max_num_patches,
+    train_ds = (
+        train_dataset.shuffle(10 * batch_size)
+        .batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
     )
+    val_ds = (
+        val_dataset.batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
+    )
+    # test_ds = map(dict_to_joint_batch, test_ds.map(tf.function(partial(image_to_batch, mode="test")),
+    #                                                num_parallel_calls=tf.data.AUTOTUNE).batch(batch_size).prefetch(
+    #     tf.data.AUTOTUNE).repeat().as_numpy_iterator())
+
+    # train_dataloader = get_training_dataset(train_files, batch_size)
+    # val_dataloader = get_val_dataset(val_files, batch_size)
+    # train_dataloader = get_dataloader(
+    #     dataset_name,
+    #     pretraining=True,
+    #     train=True,
+    #     batch_size=batch_size,
+    #     patch_size=patch_size,
+    #     max_num_patches=max_num_patches,
+    # )
+
+    # val_dataloader = get_dataloader(
+    #     dataset_name,
+    #     pretraining=True,
+    #     train=False,
+    #     batch_size=batch_size,
+    #     patch_size=patch_size,
+    #     max_num_patches=max_num_patches,
+    # )
 
     trainer = Trainer(
-        dummy_batch=next(iter(train_dataloader)),
+        dummy_batch=next(iter(train_ds)),
         model_type=model_type,
         lr=lr,
         seed=seed,
@@ -60,8 +89,8 @@ def train_autoregressor(
         dropout_probability=dropout_rate,
     )
 
-    trainer.train_model(train_dataloader, val_dataloader, num_epochs=num_epochs)
-    val_mse = trainer.eval_model(val_dataloader)
+    trainer.train_model(train_ds, val_ds, num_epochs=num_epochs)
+    val_mse = trainer.eval_model(val_ds)
     print(f"Final MSE: {val_mse}")
 
 
@@ -83,26 +112,44 @@ def train_classifier(
     max_num_patches: int,
     dataset_name: str,
 ):
-    train_dataloader = get_dataloader(
-        dataset_name,
-        pretraining=False,
-        train=True,
-        batch_size=batch_size,
-        patch_size=patch_size,
-        max_num_patches=max_num_patches,
+    image_dir = "./tfrecords_imagenet_"
+    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
+    val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
+    train_dataset, num_train_batches = get_training_dataset(train_files, batch_size)
+    val_dataset, num_val_batches = get_val_dataset(val_files, batch_size)
+    train_ds = (
+        train_dataset.shuffle(10 * batch_size)
+        .batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
     )
-
-    val_dataloader = get_dataloader(
-        dataset_name,
-        pretraining=False,
-        train=False,
-        batch_size=batch_size,
-        patch_size=patch_size,
-        max_num_patches=max_num_patches,
+    val_ds = (
+        val_dataset.batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
     )
+    # train_dataloader = get_dataloader(
+    #     dataset_name,
+    #     pretraining=False,
+    #     train=True,
+    #     batch_size=batch_size,
+    #     patch_size=patch_size,
+    #     max_num_patches=max_num_patches,
+    # )
+    #
+    # val_dataloader = get_dataloader(
+    #     dataset_name,
+    #     pretraining=False,
+    #     train=False,
+    #     batch_size=batch_size,
+    #     patch_size=patch_size,
+    #     max_num_patches=max_num_patches,
+    # )
 
     trainer = Trainer(
-        dummy_batch=next(iter(train_dataloader)),
+        dummy_batch=next(iter(train_ds)),
         model_type=model_type,
         lr=lr,
         seed=seed,
@@ -118,8 +165,8 @@ def train_classifier(
         dropout_probability=dropout_rate,
     )
 
-    trainer.train_model(train_dataloader, val_dataloader, num_epochs=num_epochs)
-    val_acc = trainer.eval_model(val_dataloader)
+    trainer.train_model(train_ds, val_ds, num_epochs=num_epochs)
+    val_acc = trainer.eval_model(val_ds)
     print(f"Final accuracy: {val_acc}")
 
 

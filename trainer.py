@@ -11,6 +11,7 @@ from jax import random
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
+from dataset import collate_pretraining
 from model import ClassificationModel, PretrainingModel
 
 # TODO: Adding lr scheduler / weight decay?
@@ -73,11 +74,7 @@ class Trainer:
     def init_model(self, exmp_batch, model_type):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
 
-        (input_patches, patch_indices) = (
-            (exmp_batch[0], exmp_batch[3])
-            if model_type == "autoregressor"
-            else (exmp_batch[0], exmp_batch[1])
-        )
+        input_patches, patch_indices, _ = exmp_batch
 
         self.init_params = self.model.init(
             {"params": init_rng, "dropout": dropout_init_rng},
@@ -118,7 +115,10 @@ class Trainer:
         return loss, (rng, acc)
 
     def loss_autoregressor(self, params, rng, batch, train):
-        input_patches, attn_mask, loss_mask, patch_indices, output_patches = batch
+        imgs, patch_indices, _ = batch
+        input_patches, attn_mask, loss_mask, patch_indices, output_patches = (
+            collate_pretraining(imgs, patch_indices, self.model.max_num_patches)
+        )
 
         # Normalize the target
         if self.norm_pix_loss:

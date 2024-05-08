@@ -1,3 +1,5 @@
+import os
+from glob import glob
 from pathlib import Path
 from typing import Any, List
 
@@ -7,101 +9,129 @@ from PIL.Image import Image
 from torch.utils.data import DataLoader
 from torchvision.datasets import FashionMNIST
 from torchvision.datasets.folder import ImageFolder
-from torchvision.transforms import CenterCrop, Compose, Resize, ToTensor
 
 DATA_ROOT = "data"
 
+import tensorflow as tf
+import tensorflow_datasets as tfds
 
-def image_to_numpy(image: Image) -> np.array:
-    image = np.array(image, dtype=np.float32)
-    image = (image / 255.0 - 0.5) / 0.5
+AUTOTUNE = tf.data.AUTOTUNE
+
+
+def decode_image(image_data):
+    image = tf.image.decode_jpeg(image_data, channels=3)
+    image = tf.cast(image, tf.float32) / 255.0
     return image
 
 
-def reshape_image(image: np.array, patch_size: int, max_num_patches: int) -> np.array:
-    height, width = image.shape[:2]
+def resize_and_crop_image(image, patch_size=16):
+    # extract the true height and width of the image (they are None when implicit)
+    H, W, C = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
+    # compute the sqrt of the aspect ratio
+    sqrt_ratio = tf.cast(tf.sqrt(H / W), tf.float32)
+    # compute the new height and width
+    H = tf.cast(224 * sqrt_ratio, tf.int32)
+    W = tf.cast(224**2 / tf.cast(H, tf.float32), tf.int32)
+    # resize the image, now the num pixels is ~= 224^2
+    image = tf.image.resize(image, [H, W])
 
-    # We want to reshape the image to lambda x height, lambda x width so that
-    # the total number of (spacial) pixels is smaller than max_patches x patch_size
-    lmbd = np.sqrt(patch_size**2 * max_num_patches / (height * width))
-    resize_height = int(lmbd * height)
-    resize_width = int(lmbd * width)
+    h, w = tf.shape(image)[0], tf.shape(image)[1]
+    target_height = h - (h % patch_size)
+    target_width = w - (w % patch_size)
+    offset_height = (h - target_height) // 2
+    offset_width = (w - target_width) // 2
+    image = tf.image.crop_to_bounding_box(
+        image, offset_height, offset_width, target_height, target_width
+    )
+    return image
 
-    # After resizing the image, the dimensions might not be divisible by patch_size
-    # so we have to take a random crop
-    crop_height = (resize_height // patch_size) * patch_size
-    crop_width = (resize_width // patch_size) * patch_size
 
-    output_image = Compose(
+def patchify(image, patch_size=16):
+    H, W, C = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
+    # calculate the number of patches for this specific image
+    P_h = tf.cast(H / patch_size, tf.int32)
+    P_w = tf.cast(W / patch_size, tf.int32)
+    # crop away any pixels that don't fit into patches
+    image = image[: P_h * patch_size, : P_w * patch_size]
+    # [P_h, patch_size, P_w, patch_size, C]
+    image = tf.reshape(image, [P_h, patch_size, P_w, patch_size, C])
+    # [P_h, P_w, patch_size, patch_size, C]
+    image = tf.transpose(image, [0, 2, 1, 3, 4])
+    # [P_h*P_w, patch_size, patch_size, C]
+    image = tf.reshape(image, [-1, patch_size, patch_size, C])
+    # seq_len = P_h*P_w
+    seq_len = tf.shape(image)[0]
+    # [seq_len, patch_dim] where patch_dim = patch_size*patch_size*C
+    image = tf.reshape(image, [seq_len, -1])
+
+    image_coords = tf.stack(
         [
-            ToTensor(),
-            Resize(size=(resize_height, resize_width)),
-            CenterCrop(size=(crop_height, crop_width)),
-        ]
-    )(image)
-
-    return rearrange(output_image.numpy(), "c h w -> h w c")
-
-
-def patchify(image: np.array, patch_size: int):
-    assert image.shape[0] % patch_size == 0
-    assert image.shape[1] % patch_size == 0
-
-    for x_idx in range(image.shape[0] // patch_size):
-        for y_idx in range(image.shape[1] // patch_size):
-            patch = image[
-                x_idx * patch_size : (x_idx + 1) * patch_size,
-                y_idx * patch_size : (y_idx + 1) * patch_size,
-            ]
-            patch_idx = x_idx * (image.shape[1] // patch_size) + y_idx
-
-            yield patch_idx, patch.flatten()
+            tf.repeat(tf.range(P_h, dtype=tf.int32), (P_w,)),
+            tf.tile(tf.range(P_w, dtype=tf.int32), (P_h,)),
+        ],
+        axis=-1,
+    )
+    return image, image_coords
 
 
-def collate(batch: List, patch_size: int, max_num_patches: int):
-    """
-    batch: list of (image: np.array<h, w, c>, label: int)
-    """
-    batch_size = len(batch)
-    first_image = batch[0][0]
-    if len(first_image.shape) == 2:
-        num_channels = 1
-    else:
-        _, _, num_channels = first_image.shape
+def read_labeled_tfrecord(example, patch_size=16):
+    feature = {
+        "image": tf.io.FixedLenFeature([], tf.string),
+        "path": tf.io.FixedLenFeature([], tf.string),
+        "class_id": tf.io.FixedLenFeature([], tf.int64),
+        "image_id": tf.io.FixedLenFeature([], tf.int64),
+    }
 
-    patches = np.zeros((batch_size, max_num_patches, patch_size**2 * num_channels))
-    patch_indices = np.zeros((batch_size, max_num_patches, 2), dtype=int)
-    labels = np.zeros(batch_size, dtype=int)
+    example = tf.io.parse_single_example(example, feature)
+    image = decode_image(example["image"])
+    image = resize_and_crop_image(image, patch_size)
+    image, image_coords = patchify(image, patch_size)
 
-    for i, (image, label) in enumerate(batch):
-        reshaped_image = reshape_image(image, patch_size, max_num_patches)
-        new_height, new_width, _ = reshaped_image.shape
-
-        for patch_idx, patch in patchify(reshaped_image, patch_size):
-            patches[i, patch_idx, :] = patch
-
-        sample_indices = rearrange(
-            np.meshgrid(
-                np.arange(new_height // patch_size),
-                np.arange(new_width // patch_size),
-                indexing="ij",
-            ),
-            "t h w -> (h w) t",
-        )
-        patch_indices[i, : len(sample_indices)] = sample_indices
-
-        labels[i] = label
-
-    return patches, patch_indices, labels
+    seq_len = (224 // patch_size) ** 2
+    image, padding_mask = pad_sequence(image, seq_len)
+    image_coords, _ = pad_sequence(image_coords, seq_len)
+    label = tf.cast(example["class_id"], tf.int32)
+    return image, image_coords, label
 
 
-def collate_classification(batch: List, patch_size: int, max_num_patches: int):
-    patches, patch_indices, labels = collate(batch, patch_size, max_num_patches)
-    return patches, patch_indices, labels
+def pad_sequence(seq, seq_len):
+    unpadded_seq_len = tf.shape(seq)[0]
+    seq_dim = tf.shape(seq)[1]
+    padding_mask_false = tf.zeros(unpadded_seq_len, dtype=tf.bool)
+    padding_mask_true = tf.ones(seq_len - unpadded_seq_len, dtype=tf.bool)
+    padding_mask = tf.concat([padding_mask_false, padding_mask_true], axis=0)
+
+    padding_length = seq_len - unpadded_seq_len
+    padding_seq = tf.zeros([padding_length, seq_dim], dtype=seq.dtype)
+    seq = tf.concat([seq, padding_seq], axis=0)
+
+    return seq, padding_mask
 
 
-def collate_pretraining(batch: List, patch_size: int, max_num_patches: int):
-    patches, patch_indices, _ = collate(batch, patch_size, max_num_patches)
+def load_dataset(filenames):
+    dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
+    dataset_len = sum(1 for _ in dataset)
+    dataset = dataset.map(read_labeled_tfrecord, num_parallel_calls=AUTOTUNE)
+    return dataset, dataset_len
+
+
+def get_training_dataset(filenames, batch_size):
+    dataset, dataset_len = load_dataset(filenames)
+    dataset = dataset.repeat()
+    dataset = dataset.shuffle(2048)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(AUTOTUNE)
+    return dataset, dataset_len // batch_size
+
+
+def get_val_dataset(filenames, batch_size):
+    dataset, dataset_len = load_dataset(filenames)
+    dataset = dataset.batch(512)
+    dataset = dataset.prefetch(AUTOTUNE)
+    return dataset, dataset_len // batch_size
+
+
+def collate_pretraining(patches, patch_indices, max_num_patches: int):
     input_patches = patches[:, :-1, :]
     patch_indices = patch_indices[:, :-1, :]
     output_patches = patches[:, 1:, :]
@@ -127,108 +157,23 @@ def collate_pretraining(batch: List, patch_size: int, max_num_patches: int):
     return input_patches, attention_mask, loss_mask, patch_indices, output_patches
 
 
-def get_fashion_mnist_dataloader(
-    pretraining: bool,
-    train: bool,
-    batch_size: int,
-    patch_size: int,
-    max_num_patches: int,
-) -> DataLoader:
-    dataset = FashionMNIST(
-        DATA_ROOT, train=train, transform=image_to_numpy, download=True
+if __name__ == "__main__":
+    batch_size = 512
+    image_dir = "./tfrecords_imagenet_"
+    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
+    val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
+    train_dataset, num_train_batches = get_training_dataset(train_files, batch_size)
+    val_dataset, num_val_batches = get_val_dataset(val_files, batch_size)
+    train_ds = (
+        train_dataset.shuffle(10 * batch_size)
+        .batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
     )
-
-    collate_fn = collate_pretraining if pretraining else collate_classification
-    shuffle = True if train else False
-
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        drop_last=True,
-        collate_fn=lambda batch: collate_fn(batch, patch_size, max_num_patches),
+    val_ds = (
+        val_dataset.batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
     )
-
-    return dataloader
-
-
-class ImageNet(ImageFolder):
-    IMAGENET_ROOT = "/scratch-nvme/ml-datasets/imagenet/ILSVRC/Data/CLS-LOC/"
-    WNID_TO_CLASSES_FILE = "/scratch-nvme/ml-datasets/imagenet/LOC_synset_mapping.txt"
-
-    def __init__(
-        self,
-        split: str = "train",
-        **kwargs: Any,
-    ) -> None:
-        self.root = Path(self.IMAGENET_ROOT)
-        assert split in ["train", "val", "test"]
-
-        self.split_folder = self.root / split
-        wnid_to_classes = self.load_wnid_to_classes_file(
-            Path(self.WNID_TO_CLASSES_FILE)
-        )
-
-        super().__init__(self.split_folder, **kwargs)
-
-        self.wnids = self.classes
-        self.wnid_to_idx = self.class_to_idx
-        self.classes = [wnid_to_classes[wnid] for wnid in self.wnids]
-        self.class_to_idx = {
-            cls: idx for idx, clss in enumerate(self.classes) for cls in clss
-        }
-
-    def load_wnid_to_classes_file(self, path):
-        lines = path.read_text().split("\n")
-        wnid_to_classes = dict()
-        for line in lines:
-            sep = line.find(" ")
-            wnid = line[:sep]
-            classes = line[sep + 1 :]
-            wnid_to_classes[wnid] = classes
-
-        return wnid_to_classes
-
-
-def get_imagenet_dataset(
-    split: str,
-):
-    dataset = ImageNet(split, transform=image_to_numpy)
-
-    return dataset
-
-
-def get_imagenet_dataloader(
-    pretraining: bool,
-    split: str,
-    batch_size: int,
-    patch_size: int,
-    max_num_patches: int,
-):
-    dataset = get_imagenet_dataset(split)
-
-    collate_fn = collate_pretraining if pretraining else collate_classification
-    shuffle = split == "train"
-
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        drop_last=True,
-        collate_fn=lambda batch: collate_fn(batch, patch_size, max_num_patches),
-    )
-
-    return dataloader
-
-
-def get_dataloader(
-    dataset: str,
-    *args,
-    **kwargs,
-):
-    if dataset == "fashion_mnist":
-        return get_fashion_mnist_dataloader(*args, **kwargs)
-    elif dataset == "imagenet":
-        return get_imagenet_dataloader(*args, **kwargs)
-    else:
-        raise ValueError(f"Dataset {dataset} does not exist")
