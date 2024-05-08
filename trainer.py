@@ -6,7 +6,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from flax.training import checkpoints, train_state
+import orbax.checkpoint as ocp
+from flax.training import train_state
 from jax import random
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -27,6 +28,7 @@ class Trainer:
         lr,
         seed,
         log_every_n_steps,
+        log_dir,
         norm_pix_loss,
         **model_hparams,
     ):
@@ -38,13 +40,33 @@ class Trainer:
         self.norm_pix_loss = norm_pix_loss
         self.log_every_n_steps = log_every_n_steps
 
-        self.log_dir = os.path.join(str(Path.cwd()), f"checkpoints/{model_type}/")
+        self.log_dir = os.path.join(str(Path.cwd()), f"{log_dir}/{model_type}/")
 
         # Get empty model based on model_type
         self.model = (
             PretrainingModel(**model_hparams)
             if model_type == "autoregressor"
             else ClassificationModel(**model_hparams)
+        )
+
+        # Checkpointing
+        ## Create a logging directory if it has not been created yet
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+
+        ## Set up the checkpointer
+        ## TODO: Change the enable_async_checkpointing = True when working on multiple GPUs
+        options = ocp.CheckpointManagerOptions(
+            create=True,
+            max_to_keep=2,
+            step_prefix="state",
+            enable_async_checkpointing=False,
+        )
+        ## TODO: This will delete the previous log directory (erase_and_create_empty)
+        ## Should we move them automatically to another directory before a new run?
+        self.checkpoint_manager = ocp.CheckpointManager(
+            ocp.test_utils.erase_and_create_empty(self.log_dir),
+            options=options,
         )
 
         # Initialize model and logger
@@ -277,14 +299,16 @@ class Trainer:
 
     def save_model(self, step):
         # Save current model at certain training iteration
-        checkpoints.save_checkpoint(
-            ckpt_dir=self.log_dir, target=self.state.params, step=step, overwrite=True
+        self.checkpoint_manager.save(
+            step,
+            self.state.params,
+            args=ocp.args.StandardSave(self.state.params),
+            force=True,
         )
 
-    def load_model(self):
-        # Load model
-        params = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
-
+    def load_model(self, step):
+        # Load model from a certain training iteration
+        params = self.checkpoint_manager.restore(step, items=None)
         self.state = train_state.TrainState.create(
             apply_fn=self.model.apply,
             params=params,
