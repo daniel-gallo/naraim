@@ -11,7 +11,6 @@ from jax import random
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from dataset import collate_pretraining
 from model import ClassificationModel, PretrainingModel
 
 # TODO: Adding lr scheduler / weight decay?
@@ -74,12 +73,12 @@ class Trainer:
     def init_model(self, exmp_batch, model_type):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
 
-        input_patches, patch_indices, _ = exmp_batch
+        image, image_coords, label, attention_matrix, loss_mask = exmp_batch
 
         self.init_params = self.model.init(
             {"params": init_rng, "dropout": dropout_init_rng},
-            input_patches,
-            patch_indices,
+            image,
+            image_coords,
             training=True,
         )["params"]
         self.state = None
@@ -99,12 +98,12 @@ class Trainer:
         )
 
     def loss_classifier(self, params, rng, batch, train):
-        imgs, patch_indices, labels = batch
+        image, image_coords, labels, attention_matrix, loss_mask = batch
         rng, dropout_apply_rng = random.split(rng)
         logits = self.model.apply(
             {"params": params},
-            imgs,
-            patch_indices,
+            image,
+            image_coords,
             training=train,
             rngs={"dropout": dropout_apply_rng},
         )
@@ -115,20 +114,13 @@ class Trainer:
         return loss, (rng, acc)
 
     def loss_autoregressor(self, params, rng, batch, train):
-        imgs, patch_indices, _ = batch
-        input_patches, attn_mask, loss_mask, patch_indices, output_patches = (
-            collate_pretraining(imgs, patch_indices, self.model.max_num_patches)
-        )
+        image, image_coords, labels, attention_matrix, loss_mask = batch
 
         # Normalize the target
         if self.norm_pix_loss:
-            mean = jnp.mean(
-                output_patches, axis=(-2, -1), keepdims=True
-            )  # shape [bs, 1, 1]
-            var = jnp.var(
-                output_patches, axis=(-2, -1), keepdims=True
-            )  # shape [bs, 1, 1]
-            targets = (output_patches - mean) / (var + 1.0e-6) ** 0.5
+            mean = jnp.mean(image, axis=(-2, -1), keepdims=True)  # shape [bs, 1, 1]
+            var = jnp.var(image, axis=(-2, -1), keepdims=True)  # shape [bs, 1, 1]
+            targets = (image - mean) / (var + 1.0e-6) ** 0.5
 
         # Apply rng only for training
         if train:
@@ -139,10 +131,10 @@ class Trainer:
 
         preds = self.model.apply(
             {"params": params},
-            input_patches,
-            patch_indices=patch_indices,
+            image,
+            patch_indices=image_coords,
             training=train,
-            mask=attn_mask,
+            mask=attention_matrix,
             rngs=rngs,
         )
 

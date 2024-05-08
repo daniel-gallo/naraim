@@ -1,19 +1,10 @@
 import os
 from glob import glob
-from pathlib import Path
-from typing import Any, List
-
-import numpy as np
-from einops import rearrange
-from PIL.Image import Image
-from torch.utils.data import DataLoader
-from torchvision.datasets import FashionMNIST
-from torchvision.datasets.folder import ImageFolder
 
 DATA_ROOT = "data"
 
 import tensorflow as tf
-import tensorflow_datasets as tfds
+from matplotlib import pyplot as plt
 
 AUTOTUNE = tf.data.AUTOTUNE
 
@@ -74,6 +65,27 @@ def patchify(image, patch_size):
     return image, image_coords
 
 
+def get_attention_matrix(prefix, max_seq_length):
+    lower_triangular = tf.experimental.numpy.tril(
+        tf.ones((max_seq_length, max_seq_length))
+    )
+
+    square = tf.pad(
+        tensor=tf.ones((prefix, prefix)),
+        paddings=[(0, max_seq_length - prefix), (0, max_seq_length - prefix)],
+    )
+
+    return tf.clip_by_value(lower_triangular + square, 0, 1)
+
+
+def get_loss_mask(prefix, seq_length, max_seq_length):
+    zeros_start = tf.zeros(prefix - 1)
+    ones = tf.ones(seq_length - prefix)
+    zeros_end = tf.zeros(max_seq_length - seq_length + 1)
+
+    return tf.concat([zeros_start, ones, zeros_end], axis=0)
+
+
 def read_labeled_tfrecord(example, patch_size):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
@@ -86,12 +98,21 @@ def read_labeled_tfrecord(example, patch_size):
     image = decode_image(example["image"])
     image = resize_and_crop_image(image, patch_size)
     image, image_coords = patchify(image, patch_size)
+    seq_length = tf.shape(image)[0]
 
-    seq_len = (224 // patch_size) ** 2
-    image, padding_mask = pad_sequence(image, seq_len)
-    image_coords, _ = pad_sequence(image_coords, seq_len)
+    max_seq_len = (224 // patch_size) ** 2
+    image, padding_mask = pad_sequence(image, max_seq_len)
+    image_coords, _ = pad_sequence(image_coords, max_seq_len)
     label = tf.cast(example["class_id"], tf.int32)
-    return image, image_coords, label
+
+    prefix = tf.experimental.numpy.random.randint(
+        low=1, high=seq_length, dtype=tf.experimental.numpy.int32
+    )
+
+    attention_matrix = get_attention_matrix(prefix, max_seq_len)
+    loss_mask = get_loss_mask(prefix, seq_length, max_seq_len)
+
+    return image, image_coords, label, attention_matrix, loss_mask
 
 
 def pad_sequence(seq, seq_len):
@@ -116,68 +137,26 @@ def load_dataset(filenames, patch_size):
     return dataset
 
 
-def get_training_dataset(filenames, batch_size, patch_size):
-    dataset = load_dataset(filenames, patch_size)
-    dataset = dataset.repeat()
-    dataset = dataset.shuffle(2048)
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(AUTOTUNE)
-    return dataset
+if __name__ == "__main__":
+    batch_size = 4
+    image_dir = "./tfrecords"
+    train_files = glob(os.path.join(image_dir, "*.tfrec"))
+    train_dataset = load_dataset(train_files, 14)
+    train_ds = (
+        train_dataset.shuffle(10 * batch_size)
+        .batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+        .repeat()
+        .as_numpy_iterator()
+    )
 
+    for batch in train_ds:
+        image, image_coords, label, attention_matrix, loss_mask = batch
+        print(image.shape)
+        print(image_coords.shape)
+        print(label.shape)
+        print(attention_matrix.shape)
+        print(loss_mask.shape)
 
-def get_val_dataset(filenames, patch_size):
-    dataset = load_dataset(filenames, patch_size)
-    dataset = dataset.batch(512)
-    dataset = dataset.prefetch(AUTOTUNE)
-    return dataset
-
-
-def collate_pretraining(patches, patch_indices, max_num_patches: int):
-    input_patches = patches[:, :-1, :]
-    patch_indices = patch_indices[:, :-1, :]
-    output_patches = patches[:, 1:, :]
-
-    # TODO: is it tril for sure? Or is it triu?
-    # TODO: should prefix-sampling be per-batch of per-sample?
-    # We have to subtract two in total:
-    #  - 1 because the last patch is not passed
-    #  - 1 because we want to run gradient descent on at least one patch
-    #      (we run gradient descent in between the prefix and the padding)
-    num_patches = (patch_indices.max(axis=1) + 1).prod(axis=1)
-    first_dimension_with_padding = num_patches.min() - 1
-    prefix_length = np.random.randint(low=1, high=first_dimension_with_padding - 1)
-    attention_mask = np.tril(np.ones((max_num_patches - 1, max_num_patches - 1)))
-    attention_mask[:prefix_length, :prefix_length] = 1
-
-    loss_mask = np.ones((len(input_patches), max_num_patches - 1))
-    loss_mask[:, :prefix_length] = 0
-
-    for i, idx in enumerate(num_patches):
-        loss_mask[i, idx:] = 0
-
-    return input_patches, attention_mask, loss_mask, patch_indices, output_patches
-
-
-# if __name__ == "__main__":
-# batch_size = 512
-# image_dir = "./tfrecords_imagenet_"
-# train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
-# val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
-# train_dataset = load_dataset(train_files)
-# val_dataset = load_dataset(val_files)
-# # train_dataset = get_training_dataset(train_files, batch_size)
-# # val_dataset = get_val_dataset(val_files)
-# train_ds = (
-#     train_dataset.shuffle(10 * batch_size)
-#     .batch(batch_size)
-#     .prefetch(tf.data.AUTOTUNE)
-#     .repeat()
-#     .as_numpy_iterator()
-# )
-# val_ds = (
-#     val_dataset.batch(batch_size)
-#     .prefetch(tf.data.AUTOTUNE)
-#     .repeat()
-#     .as_numpy_iterator()
-# )
-# for i in train_ds:
+        plt.imshow(loss_mask)
+        plt.show()

@@ -1,12 +1,11 @@
 import argparse
 import os
-from functools import partial
 from glob import glob
 
 import jax.numpy as jnp
 import tensorflow as tf
 
-from dataset import get_training_dataset, get_val_dataset, load_dataset
+from dataset import load_dataset
 from trainer import Trainer
 
 
@@ -28,8 +27,8 @@ def train_autoregressor(
     num_channels: int,
     dataset_name: str,
 ):
-    image_dir = "./tfrecords_imagenet_"
-    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
+    image_dir = "./tfrecords"
+    train_files = glob(os.path.join(image_dir, "*.tfrec"))
     val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
     train_dataset = load_dataset(train_files, patch_size)
     val_dataset = load_dataset(val_files, patch_size)

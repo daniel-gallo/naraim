@@ -45,12 +45,13 @@ class TransformerLayer(nn.Module):
             ),
         )
 
+        # TODO: only do this if mask has two dimensions
         if mask is not None:
             bs, sequence_length, _ = x.shape
             # The mask should be batch_size x num_heads x sequence_length x sequence_length
             # We can use broadcasting for the first two dimensions
-            mask = jnp.expand_dims(mask, 0)
-            mask = jnp.expand_dims(mask, 0)
+            # mask = jnp.expand_dims(mask, 0)
+            mask = jnp.expand_dims(mask, 1)
 
         x = attention_residual_block(x, mask=mask)
         x = mlp_residual_block(x)
