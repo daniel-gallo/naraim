@@ -206,6 +206,7 @@ class Trainer:
         # Train model for one epoch, and print avg loss and acc/mse
         metrics = defaultdict(list)
 
+        step = 0
         for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
             # aux_output:
             # - (loss, rng) for autoregressor
@@ -213,12 +214,11 @@ class Trainer:
             self.state, aux_output = self.train_step(self.state, self.rng, batch)
 
             self.rng = aux_output[1]  # rng
-
+            step += 1
             for i, key in enumerate(self.metrics_keys):
                 metrics[key].append(aux_output[2 * i])
 
             if idx > 1 and idx % self.log_every_n_steps == 0:
-                step = (epoch - 1) * (len(train_loader) // 10) + idx / 10
                 for key in self.metrics_keys:
                     self.logger.add_scalar(
                         f"{key}/train",
