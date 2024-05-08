@@ -4,7 +4,6 @@ Create TFRecords from ImageNet dataset
 Adapted from: https://keras.io/examples/keras_recipes/creating_tfrecords/
 """
 
-# Import statements
 import os
 
 import matplotlib.pyplot as plt
@@ -63,25 +62,33 @@ def parse_tfrecord_fn(example):
 
 
 def main():
-    tfrecords_dir = "tfrecords_imagenet_train"
-    images_dir = "/scratch-nvme/ml-datasets/imagenet/ILSVRC/Data/CLS-LOC/train/"
+    data_split = "val"
 
-    paths = []
+    assert data_split in ["train", "val"]
+
+    tfrecords_dir = f"tfrecords_imagenet_{data_split}"
+    images_dir = f"/scratch-nvme/ml-datasets/imagenet/ILSVRC/Data/CLS-LOC/{data_split}/"
+
     classes = set()
+    datapoints = []
     with open(
-        "/scratch-nvme/ml-datasets/imagenet/ILSVRC/ImageSets/CLS-LOC/train_cls.txt", "r"
+        f"/scratch-nvme/ml-datasets/imagenet/LOC_{data_split}_solution.csv", "r"
     ) as fopen:
-        for line in fopen.readlines():
-            path = line.strip().split()[0]
-            cls = path.split("/")[0]
-            paths.append(path)
+        for idx, line in enumerate(fopen.readlines()[1:]):  # skip header
+            imname = line.strip().split(",")[0]
+            cls = line.strip().split(",")[1].split()[0]
+            if data_split == "train":
+                path = f"{cls}/{imname}"
+            else:
+                path = imname  # no class folder for validation set
+            datapoints.append((path, cls))
             classes.add(cls)
 
     classes = sorted(list(classes))
     class_mapping = {class_name: i for i, class_name in enumerate(classes)}
     annotations = [
-        {"image_id": i, "class_id": class_mapping[path.split("/")[0]], "path": path}
-        for i, path in enumerate(paths)
+        {"image_id": i, "class_id": class_mapping[cls], "path": path}
+        for i, (path, cls) in enumerate(datapoints)
     ]
     num_samples = 4096
     num_tfrecords = len(annotations) // num_samples
