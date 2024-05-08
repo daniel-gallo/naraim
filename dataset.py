@@ -24,7 +24,7 @@ def decode_image(image_data):
     return image
 
 
-def resize_and_crop_image(image, patch_size=16):
+def resize_and_crop_image(image, patch_size):
     # extract the true height and width of the image (they are None when implicit)
     H, W, C = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
     # compute the sqrt of the aspect ratio
@@ -46,7 +46,7 @@ def resize_and_crop_image(image, patch_size=16):
     return image
 
 
-def patchify(image, patch_size=16):
+def patchify(image, patch_size):
     H, W, C = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
     # calculate the number of patches for this specific image
     P_h = tf.cast(H / patch_size, tf.int32)
@@ -74,7 +74,7 @@ def patchify(image, patch_size=16):
     return image, image_coords
 
 
-def read_labeled_tfrecord(example, patch_size=16):
+def read_labeled_tfrecord(example, patch_size):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
         "path": tf.io.FixedLenFeature([], tf.string),
@@ -108,27 +108,28 @@ def pad_sequence(seq, seq_len):
     return seq, padding_mask
 
 
-def load_dataset(filenames):
+def load_dataset(filenames, patch_size):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
-    dataset_len = sum(1 for _ in dataset)
-    dataset = dataset.map(read_labeled_tfrecord, num_parallel_calls=AUTOTUNE)
-    return dataset, dataset_len
+    dataset = dataset.map(
+        lambda x: read_labeled_tfrecord(x, patch_size), num_parallel_calls=AUTOTUNE
+    )
+    return dataset
 
 
-def get_training_dataset(filenames, batch_size):
-    dataset, dataset_len = load_dataset(filenames)
+def get_training_dataset(filenames, batch_size, patch_size):
+    dataset = load_dataset(filenames, patch_size)
     dataset = dataset.repeat()
     dataset = dataset.shuffle(2048)
     dataset = dataset.batch(batch_size)
     dataset = dataset.prefetch(AUTOTUNE)
-    return dataset, dataset_len // batch_size
+    return dataset
 
 
-def get_val_dataset(filenames, batch_size):
-    dataset, dataset_len = load_dataset(filenames)
+def get_val_dataset(filenames, patch_size):
+    dataset = load_dataset(filenames, patch_size)
     dataset = dataset.batch(512)
     dataset = dataset.prefetch(AUTOTUNE)
-    return dataset, dataset_len // batch_size
+    return dataset
 
 
 def collate_pretraining(patches, patch_indices, max_num_patches: int):
@@ -157,23 +158,26 @@ def collate_pretraining(patches, patch_indices, max_num_patches: int):
     return input_patches, attention_mask, loss_mask, patch_indices, output_patches
 
 
-if __name__ == "__main__":
-    batch_size = 512
-    image_dir = "./tfrecords_imagenet_"
-    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
-    val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
-    train_dataset, num_train_batches = get_training_dataset(train_files, batch_size)
-    val_dataset, num_val_batches = get_val_dataset(val_files, batch_size)
-    train_ds = (
-        train_dataset.shuffle(10 * batch_size)
-        .batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
-        .repeat()
-        .as_numpy_iterator()
-    )
-    val_ds = (
-        val_dataset.batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
-        .repeat()
-        .as_numpy_iterator()
-    )
+# if __name__ == "__main__":
+# batch_size = 512
+# image_dir = "./tfrecords_imagenet_"
+# train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
+# val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
+# train_dataset = load_dataset(train_files)
+# val_dataset = load_dataset(val_files)
+# # train_dataset = get_training_dataset(train_files, batch_size)
+# # val_dataset = get_val_dataset(val_files)
+# train_ds = (
+#     train_dataset.shuffle(10 * batch_size)
+#     .batch(batch_size)
+#     .prefetch(tf.data.AUTOTUNE)
+#     .repeat()
+#     .as_numpy_iterator()
+# )
+# val_ds = (
+#     val_dataset.batch(batch_size)
+#     .prefetch(tf.data.AUTOTUNE)
+#     .repeat()
+#     .as_numpy_iterator()
+# )
+# for i in train_ds:

@@ -6,7 +6,7 @@ from glob import glob
 import jax.numpy as jnp
 import tensorflow as tf
 
-from dataset import get_training_dataset, get_val_dataset
+from dataset import get_training_dataset, get_val_dataset, load_dataset
 from trainer import Trainer
 
 
@@ -31,9 +31,8 @@ def train_autoregressor(
     image_dir = "./tfrecords_imagenet_"
     train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
     val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
-    train_dataset, num_train_batches = get_training_dataset(train_files, batch_size)
-    val_dataset, num_val_batches = get_val_dataset(val_files, batch_size)
-
+    train_dataset = load_dataset(train_files, patch_size)
+    val_dataset = load_dataset(val_files, patch_size)
     train_ds = (
         train_dataset.shuffle(10 * batch_size)
         .batch(batch_size)
@@ -115,8 +114,8 @@ def train_classifier(
     image_dir = "./tfrecords_imagenet_"
     train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
     val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
-    train_dataset, num_train_batches = get_training_dataset(train_files, batch_size)
-    val_dataset, num_val_batches = get_val_dataset(val_files, batch_size)
+    train_dataset = load_dataset(train_files, patch_size)
+    val_dataset = load_dataset(val_files, patch_size)
     train_ds = (
         train_dataset.shuffle(10 * batch_size)
         .batch(batch_size)

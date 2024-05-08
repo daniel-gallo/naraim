@@ -11,4 +11,4 @@ tqdm
 tensorboard
 einops
 matplotlib
-tensorflow
+tensorflow-gpu
