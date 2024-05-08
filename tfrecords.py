@@ -1,5 +1,7 @@
 """
 Create TFRecords from ImageNet dataset
+
+Adapted from: https://keras.io/examples/keras_recipes/creating_tfrecords/
 """
 
 # Import statements
@@ -61,13 +63,13 @@ def parse_tfrecord_fn(example):
 
 
 def main():
-    tfrecords_dir = "tfrecords_imagenet_test"
-    images_dir = "/scratch-nvme/ml-datasets/imagenet/ILSVRC/Data/CLS-LOC/test/"
+    tfrecords_dir = "tfrecords_imagenet_train"
+    images_dir = "/scratch-nvme/ml-datasets/imagenet/ILSVRC/Data/CLS-LOC/train/"
 
     paths = []
     classes = set()
     with open(
-        "/scratch-nvme/ml-datasets/imagenet/ILSVRC/ImageSets/CLS-LOC/test.txt", "r"
+        "/scratch-nvme/ml-datasets/imagenet/ILSVRC/ImageSets/CLS-LOC/train_cls.txt", "r"
     ) as fopen:
         for line in fopen.readlines():
             path = line.strip().split()[0]
@@ -100,6 +102,8 @@ def main():
             for sample in tqdm(samples):
                 image_path = images_dir + sample["path"] + ".JPEG"
                 image = tf.io.decode_jpeg(tf.io.read_file(image_path))
+                if image.shape[-1] == 4:
+                    image = image[:, :, :3]
                 example = create_example(image, image_path, sample)
                 writer.write(example.SerializeToString())
 
