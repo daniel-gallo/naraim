@@ -285,7 +285,8 @@ class Trainer:
                 }
 
                 eval_metric = self.eval_model(val_loader)
-
+                
+                
                 # TODO: Make this nicer
                 if metric_to_eval == "mse":
                     eval_metric = -eval_metric

@@ -62,7 +62,6 @@ def train_autoregressor(
     val_ds = (
         val_dataset.batch(batch_size)
         .prefetch(tf.data.AUTOTUNE)
-        .repeat()
         .as_numpy_iterator()
     )
     # test_ds = map(dict_to_joint_batch, test_ds.map(tf.function(partial(image_to_batch, mode="test")),
@@ -111,8 +110,6 @@ def train_autoregressor(
     )
 
     trainer.train_model(train_ds, val_ds, max_num_iterations=max_num_iterations)
-    val_mse = trainer.eval_model(val_ds)
-    print(f"Final MSE: {val_mse}")
 
 
 def train_classifier(
@@ -185,8 +182,6 @@ def train_classifier(
     )
 
     trainer.train_model(train_ds, val_ds, max_num_iterations=max_num_iterations)
-    val_acc = trainer.eval_model(val_ds)
-    print(f"Final accuracy: {val_acc}")
 
 
 if __name__ == "__main__":
