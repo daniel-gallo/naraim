@@ -278,7 +278,7 @@ class Trainer:
 
                 # Log the metric
                 self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
-                self.logger.add_hyparams(hparams_dict, best_metrics)
+                self.logger.add_hparams(hparams_dict, best_metrics)
 
                 # Reset train_metrics dictionary????
                 # train_metrics = defaultdict(list)
