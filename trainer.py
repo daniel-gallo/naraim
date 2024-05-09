@@ -28,7 +28,7 @@ class Trainer:
         log_dir,
         norm_pix_loss,
         decay_steps,
-        **model_hparams,
+        model_hparams,
     ):
         super().__init__()
         self.model_type = model_type
