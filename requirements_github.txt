@@ -1,0 +1,5 @@
+einops
+flax
+jax
+pytest
+ruff
