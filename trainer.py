@@ -15,7 +15,6 @@ from tqdm import tqdm
 from model import ClassificationModel, PretrainingModel
 
 # TODO: Adding lr scheduler / weight decay?
-# TODO: Train/val/test split. Currently, there're only train and validation dataloaders
 
 
 class Trainer:
@@ -26,9 +25,11 @@ class Trainer:
         lr,
         seed,
         log_every_n_steps,
+        eval_every_n_steps,
         log_dir,
         norm_pix_loss,
-        **model_hparams,
+        decay_steps,
+        model_hparams,
     ):
         super().__init__()
         self.model_type = model_type
@@ -37,8 +38,10 @@ class Trainer:
         self.rng = jax.random.PRNGKey(self.seed)
         self.norm_pix_loss = norm_pix_loss
         self.log_every_n_steps = log_every_n_steps
+        self.eval_every_n_steps = eval_every_n_steps
+        self.decay_steps = decay_steps
 
-        self.log_dir = os.path.join(str(Path.cwd()), f"{log_dir}/{model_type}/")
+        self.log_dir = str((Path(log_dir) / model_type).absolute())
 
         # Get empty model based on model_type
         self.model = (
@@ -104,11 +107,13 @@ class Trainer:
         self.state = None
 
     def init_optimizer(self):
-        # TODO: lr_scheduler?
+        self.lr_schedule = optax.cosine_decay_schedule(
+            init_value=self.lr, decay_steps=self.decay_steps
+        )
 
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            optax.adamw(self.lr),
+            optax.adamw(self.lr_schedule),
         )
         # Initialize training state
         self.state = train_state.TrainState.create(
@@ -202,41 +207,12 @@ class Trainer:
 
         return metric
 
-    def train_epoch(self, train_loader, epoch):
-        # Train model for one epoch, and print avg loss and acc/mse
-        metrics = defaultdict(list)
-
-        for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
-            # aux_output:
-            # - (loss, rng) for autoregressor
-            # - (loss, rng, acc) for classification
-            self.state, aux_output = self.train_step(self.state, self.rng, batch)
-
-            self.rng = aux_output[1]  # rng
-
-            for i, key in enumerate(self.metrics_keys):
-                metrics[key].append(aux_output[2 * i])
-
-            if idx > 1 and idx % self.log_every_n_steps == 0:
-                step = (epoch - 1) * (len(train_loader) // 10) + idx / 10
-                for key in self.metrics_keys:
-                    self.logger.add_scalar(
-                        f"{key}/train",
-                        np.array(jax.device_get(metrics)[key]).mean(),
-                        step,
-                    )
-
-        metrics = jax.device_get(metrics)
-        metrics = {key: np.array(metric).mean() for key, metric in metrics.items()}
-
-        return metrics
-
-    def train_model(self, train_loader, val_loader, num_epochs):
+    def train_model(self, train_loader, val_loader, max_num_iterations):
         # Train model for defined number of epochs
         self.init_optimizer()
         # Track best eval metric
         best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
-        hparams_dict = {"learning_rate": self.lr, "seed": self.seed}
+        hparams_dict = {"learning_rate": self.lr_schedule(0), "seed": self.seed}
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
         best_metrics = {
@@ -244,35 +220,102 @@ class Trainer:
             f"Best_{metric_to_eval}/val": None,
         }
 
-        for epoch_idx in tqdm(range(1, num_epochs + 1)):
-            train_metrics = self.train_epoch(train_loader, epoch_idx)
-            eval_metric = self.eval_model(val_loader)
+        step = 0
 
-            # TODO: Make this nicer
-            if metric_to_eval == "mse":
-                eval_metric = -eval_metric
+        train_metrics = defaultdict(list)
 
-            if eval_metric >= best_eval:
-                best_eval = eval_metric
-                self.save_model(step=epoch_idx)
-                best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
-                    metric_to_eval
-                ]
+        for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
+            # Finish training after the max_num_iterations steps
+            if idx >= max_num_iterations:
+                break
 
-                best_metrics[f"Best_{metric_to_eval}/val"] = (
-                    -eval_metric if metric_to_eval == "mse" else eval_metric
-                )
+            # aux_output:
+            # - (loss, rng) for autoregressor
+            # - (loss, rng, acc) for classification
+            self.state, aux_output = self.train_step(self.state, self.rng, batch)
+            self.rng = aux_output[1]  # rng
+            for i, key in enumerate(self.metrics_keys):
+                train_metrics[key].append(aux_output[2 * i])
 
-            # TODO: Now there is duplicate code
-            if metric_to_eval == "mse":
-                eval_metric = -eval_metric
+            # Logging
+            step += 1
+            if idx > 1 and idx % self.log_every_n_steps == 0:
+                for key in self.metrics_keys:
+                    self.logger.add_scalar(
+                        f"{key}/train",
+                        np.array(jax.device_get(train_metrics)[key]).mean(),
+                        step,
+                    )
 
-            # Log the metric
-            self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, epoch_idx)
+            # Do evaluation once eval_steps
+            if idx > 1 and idx % self.eval_every_n_steps == 0:
+                train_metrics = jax.device_get(train_metrics)
+                train_metrics = {
+                    key: np.array(metric).mean()
+                    for key, metric in train_metrics.items()
+                }
 
-        self.logger.add_hparams(hparams_dict, best_metrics)
+                eval_metric = self.eval_model(val_loader)
+
+                # TODO: Make this nicer
+                if metric_to_eval == "mse":
+                    eval_metric = -eval_metric
+
+                if eval_metric >= best_eval:
+                    best_eval = eval_metric
+                    self.save_model(step=idx)
+                    best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
+                        metric_to_eval
+                    ]
+
+                    best_metrics[f"Best_{metric_to_eval}/val"] = (
+                        -eval_metric if metric_to_eval == "mse" else eval_metric
+                    )
+
+                # TODO: Now there is duplicate code
+                if metric_to_eval == "mse":
+                    eval_metric = -eval_metric
+
+                # Log the metric
+                self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
+                self.logger.add_hyparams(hparams_dict, best_metrics)
+
+                # Reset train_metrics dictionary????
+                # train_metrics = defaultdict(list)
+
+        # self.logger.add_hparams(hparams_dict, best_metrics)
         self.logger.flush()
         self.logger.close()
+
+        # for epoch_idx in tqdm(range(1, num_iterations + 1)):
+        #     train_metrics = self.train_epoch(train_loader, epoch_idx)
+        #     eval_metric = self.eval_model(val_loader)
+
+        #     # TODO: Make this nicer
+        #     if metric_to_eval == "mse":
+        #         eval_metric = -eval_metric
+
+        #     if eval_metric >= best_eval:
+        #         best_eval = eval_metric
+        #         self.save_model(step=epoch_idx)
+        #         best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
+        #             metric_to_eval
+        #         ]
+
+        #         best_metrics[f"Best_{metric_to_eval}/val"] = (
+        #             -eval_metric if metric_to_eval == "mse" else eval_metric
+        #         )
+
+        #     # TODO: Now there is duplicate code
+        #     if metric_to_eval == "mse":
+        #         eval_metric = -eval_metric
+
+        #     # Log the metric
+        #     self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, epoch_idx)
+
+        # self.logger.add_hparams(hparams_dict, best_metrics)
+        # self.logger.flush()
+        # self.logger.close()
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg mse or acc

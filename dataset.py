@@ -1,8 +1,6 @@
 import os
 from glob import glob
 
-DATA_ROOT = "data"
-
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
@@ -17,7 +15,7 @@ def decode_image(image_data):
 
 def resize_and_crop_image(image, patch_size):
     # extract the true height and width of the image (they are None when implicit)
-    H, W, C = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
+    H, W, _ = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
     # compute the sqrt of the aspect ratio
     sqrt_ratio = tf.cast(tf.sqrt(H / W), tf.float32)
     # compute the new height and width
@@ -86,7 +84,21 @@ def get_loss_mask(prefix, seq_length, max_seq_length):
     return tf.concat([zeros_start, ones, zeros_end], axis=0)
 
 
-def read_labeled_tfrecord(example, patch_size):
+rng = tf.random.Generator.from_seed(123, alg="philox")
+
+
+def augment_image(image, rng):
+    seed = rng.make_seeds(1)[:, 0]
+
+    image = tf.image.stateless_random_contrast(image, lower=0.8, upper=1.2, seed=seed)
+    image = tf.image.stateless_random_brightness(image, max_delta=0.2, seed=seed)
+    image = tf.image.stateless_random_saturation(image, lower=0.8, upper=1.2, seed=seed)
+    image = tf.image.stateless_random_flip_left_right(image, seed)
+
+    return image
+
+
+def read_labeled_tfrecord(example, patch_size, rng):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
         "path": tf.io.FixedLenFeature([], tf.string),
@@ -96,13 +108,15 @@ def read_labeled_tfrecord(example, patch_size):
 
     example = tf.io.parse_single_example(example, feature)
     image = decode_image(example["image"])
+    image = augment_image(image, rng)
+
     image = resize_and_crop_image(image, patch_size)
-    image, image_coords = patchify(image, patch_size)
-    seq_length = tf.shape(image)[0]
+    patches, patch_indices = patchify(image, patch_size)
+    seq_length = tf.shape(patches)[0]
 
     max_seq_len = (224 // patch_size) ** 2
-    image, padding_mask = pad_sequence(image, max_seq_len)
-    image_coords, _ = pad_sequence(image_coords, max_seq_len)
+    patches, _ = pad_sequence(patches, max_seq_len)
+    patch_indices, _ = pad_sequence(patch_indices, max_seq_len)
     label = tf.cast(example["class_id"], tf.int32)
 
     prefix = tf.experimental.numpy.random.randint(
@@ -112,7 +126,7 @@ def read_labeled_tfrecord(example, patch_size):
     attention_matrix = get_attention_matrix(prefix, max_seq_len)
     loss_mask = get_loss_mask(prefix, seq_length, max_seq_len)
 
-    return image, image_coords, label, attention_matrix, loss_mask
+    return patches, patch_indices, label, attention_matrix, loss_mask
 
 
 def pad_sequence(seq, seq_len):
@@ -131,8 +145,11 @@ def pad_sequence(seq, seq_len):
 
 def load_dataset(filenames, patch_size):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
+
+    # Create a random number generator for data augmentations
+    rng = tf.random.Generator.from_seed(42, alg="philox")
     dataset = dataset.map(
-        lambda x: read_labeled_tfrecord(x, patch_size), num_parallel_calls=AUTOTUNE
+        lambda x: read_labeled_tfrecord(x, patch_size, rng), num_parallel_calls=AUTOTUNE
     )
     return dataset
 

@@ -90,6 +90,7 @@ def test_mask():
 
     mask = block_diag(*[jnp.ones((n // 2, n // 2))] * 2)
     assert mask.shape == (n, n)
+    mask = jnp.repeat(mask[None, :, :], repeats=bs, axis=0)
 
     params = model.init(rng, x, training=False)
     output = model.apply(params, x, training=False, mask=mask, rngs={"dropout": rng})
