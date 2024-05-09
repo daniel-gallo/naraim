@@ -1,8 +1,6 @@
 import os
 from glob import glob
 
-DATA_ROOT = "data"
-
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
@@ -86,7 +84,21 @@ def get_loss_mask(prefix, seq_length, max_seq_length):
     return tf.concat([zeros_start, ones, zeros_end], axis=0)
 
 
-def read_labeled_tfrecord(example, patch_size):
+rng = tf.random.Generator.from_seed(123, alg="philox")
+
+
+def augment_image(image, rng):
+    seed = rng.make_seeds(1)[:, 0]
+
+    image = tf.image.stateless_random_contrast(image, lower=0.8, upper=1.2, seed=seed)
+    image = tf.image.stateless_random_brightness(image, max_delta=0.2, seed=seed)
+    image = tf.image.stateless_random_saturation(image, lower=0.8, upper=1.2, seed=seed)
+    image = tf.image.stateless_random_flip_left_right(image, seed)
+
+    return image
+
+
+def read_labeled_tfrecord(example, patch_size, rng):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
         "path": tf.io.FixedLenFeature([], tf.string),
@@ -96,6 +108,8 @@ def read_labeled_tfrecord(example, patch_size):
 
     example = tf.io.parse_single_example(example, feature)
     image = decode_image(example["image"])
+    image = augment_image(image, rng)
+
     image = resize_and_crop_image(image, patch_size)
     image, image_coords = patchify(image, patch_size)
     seq_length = tf.shape(image)[0]
@@ -131,8 +145,11 @@ def pad_sequence(seq, seq_len):
 
 def load_dataset(filenames, patch_size):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
+
+    # Create a random number generator for data augmentations
+    rng = tf.random.Generator.from_seed(42, alg="philox")
     dataset = dataset.map(
-        lambda x: read_labeled_tfrecord(x, patch_size), num_parallel_calls=AUTOTUNE
+        lambda x: read_labeled_tfrecord(x, patch_size, rng), num_parallel_calls=AUTOTUNE
     )
     return dataset
 
