@@ -29,6 +29,7 @@ class Trainer:
         log_dir,
         norm_pix_loss,
         decay_steps,
+        loaded_checkpoint_idx,
         model_hparams,
     ):
         super().__init__()
@@ -40,7 +41,8 @@ class Trainer:
         self.log_every_n_steps = log_every_n_steps
         self.eval_every_n_steps = eval_every_n_steps
         self.decay_steps = decay_steps
-
+        self.loaded_checkpoint_idx = loaded_checkpoint_idx
+        
         self.log_dir = str((Path(log_dir) / model_type).absolute())
 
         # Get empty model based on model_type
@@ -104,8 +106,9 @@ class Trainer:
             image_coords,
             training=True,
         )["params"]
+        
         self.state = None
-
+        
     def init_optimizer(self):
         self.lr_schedule = optax.cosine_decay_schedule(
             init_value=self.lr, decay_steps=self.decay_steps
@@ -115,12 +118,17 @@ class Trainer:
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
             optax.adamw(self.lr_schedule),
         )
-        # Initialize training state
-        self.state = train_state.TrainState.create(
-            apply_fn=self.model.apply,
-            params=self.init_params if self.state is None else self.state.params,
-            tx=optimizer,
-        )
+        
+        if self.loaded_checkpoint_idx == 0:
+            # Initialize training state with self.init_params
+            self.state = train_state.TrainState.create(
+                apply_fn=self.model.apply,
+                params=self.init_params if self.state is None else self.state.params,
+                tx=optimizer,
+            )
+        else:
+            self.load_model(self.loaded_checkpoint_idx)
+        
 
     def loss_classifier(self, params, rng, batch, train):
         image, image_coords, labels, attention_matrix, loss_mask = batch
@@ -212,7 +220,7 @@ class Trainer:
         self.init_optimizer()
         # Track best eval metric
         best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
-        hparams_dict = {"learning_rate": self.lr_schedule(0), "seed": self.seed}
+        hparams_dict = {"learning_rate": float(self.lr_schedule(0)), "seed": self.seed}
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
         best_metrics = {
@@ -278,44 +286,16 @@ class Trainer:
 
                 # Log the metric
                 self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
-                self.logger.add_hyparams(hparams_dict, best_metrics)
-
-                # Reset train_metrics dictionary????
-                # train_metrics = defaultdict(list)
-
-        # self.logger.add_hparams(hparams_dict, best_metrics)
+                
+                hparams_dict["learning_rate"] = float(self.lr_schedule(idx))
+                self.logger.add_hparams(hparams_dict, best_metrics)
+                
+                # Reset train_metrics
+                train_metrics = defaultdict(list)
+                
         self.logger.flush()
         self.logger.close()
 
-        # for epoch_idx in tqdm(range(1, num_iterations + 1)):
-        #     train_metrics = self.train_epoch(train_loader, epoch_idx)
-        #     eval_metric = self.eval_model(val_loader)
-
-        #     # TODO: Make this nicer
-        #     if metric_to_eval == "mse":
-        #         eval_metric = -eval_metric
-
-        #     if eval_metric >= best_eval:
-        #         best_eval = eval_metric
-        #         self.save_model(step=epoch_idx)
-        #         best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
-        #             metric_to_eval
-        #         ]
-
-        #         best_metrics[f"Best_{metric_to_eval}/val"] = (
-        #             -eval_metric if metric_to_eval == "mse" else eval_metric
-        #         )
-
-        #     # TODO: Now there is duplicate code
-        #     if metric_to_eval == "mse":
-        #         eval_metric = -eval_metric
-
-        #     # Log the metric
-        #     self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, epoch_idx)
-
-        # self.logger.add_hparams(hparams_dict, best_metrics)
-        # self.logger.flush()
-        # self.logger.close()
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg mse or acc
@@ -342,6 +322,7 @@ class Trainer:
     def load_model(self, step):
         # Load model from a certain training iteration
         params = self.checkpoint_manager.restore(step, items=None)
+        
         self.state = train_state.TrainState.create(
             apply_fn=self.model.apply,
             params=params,

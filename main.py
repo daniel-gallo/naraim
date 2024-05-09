@@ -103,6 +103,10 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     trainer_args.add_argument(
         "--decay_steps", type=int, default=1000, help="Period of the cosine scheduler"
     )
+    
+    trainer_args.add_argument(
+        "--loaded_checkpoint_idx", type=int, default=0, help="Index of the loaded checkpoint (greater than 1). If no checkpoint will be loaded, then this should be initialized with 0."
+    )
 
 
 def parse_args():
@@ -149,7 +153,6 @@ if __name__ == "__main__":
         load_dataset(get_val_files(), args.patch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
-        .repeat()
         .as_numpy_iterator()
     )
 
