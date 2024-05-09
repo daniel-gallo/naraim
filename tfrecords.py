@@ -6,9 +6,7 @@ Adapted from: https://keras.io/examples/keras_recipes/creating_tfrecords/
 
 import os
 
-import matplotlib.pyplot as plt
 import tensorflow as tf
-import torchvision
 from tqdm import tqdm
 
 
