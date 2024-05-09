@@ -31,11 +31,12 @@ def get_val_files():
 
 def train_autoregressor(
     batch_size: int,
-    num_epochs: int,
+    max_num_iterations: int,
     model_type: str,
     lr: float,
     seed: int,
     log_every_n_steps: int,
+    eval_every_n_steps: int,
     log_dir: str,
     norm_pix_loss: bool,
     decay_steps: int,
@@ -94,6 +95,7 @@ def train_autoregressor(
         lr=lr,
         seed=seed,
         log_every_n_steps=log_every_n_steps,
+        eval_every_n_steps=eval_every_n_steps,
         log_dir=log_dir,
         norm_pix_loss=norm_pix_loss,
         decay_steps=decay_steps,
@@ -108,14 +110,14 @@ def train_autoregressor(
         dropout_probability=dropout_rate,
     )
 
-    trainer.train_model(train_ds, val_ds, num_epochs=num_epochs)
+    trainer.train_model(train_ds, val_ds, max_num_iterations=max_num_iterations)
     val_mse = trainer.eval_model(val_ds)
     print(f"Final MSE: {val_mse}")
 
 
 def train_classifier(
     batch_size: int,
-    num_epochs: int,
+    max_num_iterations: int,
     model_type: str,
     lr: float,
     seed: int,
@@ -144,10 +146,7 @@ def train_classifier(
         .as_numpy_iterator()
     )
     val_ds = (
-        val_dataset.batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
-        .repeat()
-        .as_numpy_iterator()
+        val_dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE).as_numpy_iterator()
     )
     # train_dataloader = get_dataloader(
     #     dataset_name,
@@ -185,7 +184,7 @@ def train_classifier(
         dropout_probability=dropout_rate,
     )
 
-    trainer.train_model(train_ds, val_ds, num_epochs=num_epochs)
+    trainer.train_model(train_ds, val_ds, max_num_iterations=max_num_iterations)
     val_acc = trainer.eval_model(val_ds)
     print(f"Final accuracy: {val_acc}")
 
@@ -193,7 +192,12 @@ def train_classifier(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train model")
 
-    parser.add_argument("--epochs", type=int, required=True, help="Number of epochs")
+    parser.add_argument(
+        "--max_num_iterations",
+        type=int,
+        required=True,
+        help="Maximum number of iterations",
+    )
 
     parser.add_argument(
         "--model_type",
@@ -250,6 +254,13 @@ if __name__ == "__main__":
         help="Number of steps until next logging",
     )
 
+    parser.add_argument(
+        "--eval_every_n_steps",
+        type=int,
+        default=5000,
+        help="Number of steps until next evaluation",
+    )
+
     parser.add_argument("--num_channels", type=int, default=1, help="Num channels")
 
     parser.add_argument(
@@ -272,11 +283,12 @@ if __name__ == "__main__":
     if args.model_type == "autoregressor":
         train_autoregressor(
             batch_size=args.batch_size,
-            num_epochs=args.epochs,
+            max_num_iterations=args.max_num_iterations,
             model_type=args.model_type,
             lr=args.lr,
             seed=args.seed,
             log_every_n_steps=args.log_every_n_steps,
+            eval_every_n_steps=args.eval_every_n_steps,
             log_dir=args.log_dir,
             norm_pix_loss=args.norm_pix_loss,
             decay_steps=args.decay_steps,
@@ -294,7 +306,7 @@ if __name__ == "__main__":
     elif args.model_type == "classifier":
         train_classifier(
             batch_size=args.batch_size,
-            num_epochs=args.epochs,
+            max_num_iterations=args.epochs,
             model_type=args.model_type,
             lr=args.lr,
             seed=args.seed,
