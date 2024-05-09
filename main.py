@@ -1,12 +1,32 @@
 import argparse
 import os
 from glob import glob
+from pathlib import Path
 
 import jax.numpy as jnp
 import tensorflow as tf
 
 from dataset import load_dataset
 from trainer import Trainer
+
+
+def _get_files(split: str):
+    snellius_path = Path(f"/scratch-shared/fomo_imagenet/tfrecords_imagenet_{split}")
+    local_path = Path("./tfrecords")
+
+    for path in (snellius_path, local_path):
+        if path.exists():
+            return list(path.glob("*.tfrec"))
+
+    raise Exception("No train TFRecords found")
+
+
+def get_train_files():
+    return _get_files("train")
+
+
+def get_val_files():
+    return _get_files("val")
 
 
 def train_autoregressor(
@@ -29,11 +49,8 @@ def train_autoregressor(
     num_channels: int,
     dataset_name: str,
 ):
-    image_dir = "/scratch-shared/fomo_imagenet/tfrecords_imagenet_"
-    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
-    val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
-    train_dataset = load_dataset(train_files, patch_size)
-    val_dataset = load_dataset(val_files, patch_size)
+    train_dataset = load_dataset(get_train_files(), patch_size)
+    val_dataset = load_dataset(get_val_files(), patch_size)
     train_ds = (
         train_dataset.shuffle(10 * batch_size)
         .batch(batch_size)
@@ -115,9 +132,8 @@ def train_classifier(
     max_num_patches: int,
     dataset_name: str,
 ):
-    image_dir = "./tfrecords_imagenet_"
-    train_files = glob(os.path.join(image_dir + "train", "*.tfrec"))
-    val_files = glob(os.path.join(image_dir + "val", "*.tfrec"))
+    train_files = glob(os.path.join(get_train_files(), "*.tfrec"))
+    val_files = glob(os.path.join(get_val_files(), "*.tfrec"))
     train_dataset = load_dataset(train_files, patch_size)
     val_dataset = load_dataset(val_files, patch_size)
     train_ds = (
