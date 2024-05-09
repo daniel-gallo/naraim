@@ -12,6 +12,7 @@ def test_autoregressor_training():
     lr = 1e-3
     seed = 42
     log_every_n_steps = 10
+    log_dir = "testing"
 
     train_dataloader = get_fashion_mnist_dataloader(
         pretraining=True,
@@ -36,6 +37,7 @@ def test_autoregressor_training():
         lr=lr,
         seed=seed,
         log_every_n_steps=log_every_n_steps,
+        log_dir=log_dir,
         norm_pix_loss=True,
         patch_size=14,
         max_num_patches=max_num_patches,
@@ -70,13 +72,13 @@ def test_autoregressor_training():
     assert isinstance(mse.item(), float)
 
 
-# @pytest.mark.skip(reason="TrainerClassifier will be deleted")
 def test_classifier_training():
     max_num_patches = 256
     num_categories = 10
     lr = 1e-3
     seed = 42
     log_every_n_steps = 10
+    log_dir = "testing"
 
     train_dataloader = get_fashion_mnist_dataloader(
         pretraining=False, train=True, batch_size=4, patch_size=14, max_num_patches=256
@@ -93,6 +95,7 @@ def test_classifier_training():
         lr=lr,
         seed=seed,
         log_every_n_steps=log_every_n_steps,
+        log_dir=log_dir,
         norm_pix_loss=True,
         max_num_patches=max_num_patches,
         dtype=jnp.float32,

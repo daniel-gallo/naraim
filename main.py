@@ -16,6 +16,7 @@ def train_autoregressor(
     lr: float,
     seed: int,
     log_every_n_steps: int,
+    log_dir: str,
     norm_pix_loss: bool,
     embedding_dimension: int,
     hidden_dimension: int,
@@ -75,6 +76,7 @@ def train_autoregressor(
         lr=lr,
         seed=seed,
         log_every_n_steps=log_every_n_steps,
+        log_dir=log_dir,
         norm_pix_loss=norm_pix_loss,
         dtype=jnp.float32,
         patch_size=patch_size,
@@ -99,6 +101,7 @@ def train_classifier(
     lr: float,
     seed: int,
     log_every_n_steps: int,
+    log_dir: str,
     norm_pix_loss: bool,
     embedding_dimension: int,
     hidden_dimension: int,
@@ -152,6 +155,7 @@ def train_classifier(
         lr=lr,
         seed=seed,
         log_every_n_steps=log_every_n_steps,
+        log_dir=log_dir,
         norm_pix_loss=norm_pix_loss,
         dtype=jnp.float32,
         max_num_patches=max_num_patches,
@@ -235,7 +239,17 @@ if __name__ == "__main__":
         help="Dataset name",
     )
 
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default="checkpoints",
+        help="Directory name for saving the checkpoints",
+    )
+
     args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     if args.model_type == "autoregressor":
         train_autoregressor(
@@ -245,6 +259,7 @@ if __name__ == "__main__":
             lr=args.lr,
             seed=args.seed,
             log_every_n_steps=args.log_every_n_steps,
+            log_dir=args.log_dir,
             norm_pix_loss=args.norm_pix_loss,
             embedding_dimension=args.embedding_dimension,
             hidden_dimension=args.hidden_dimension,
@@ -265,6 +280,7 @@ if __name__ == "__main__":
             lr=args.lr,
             seed=args.seed,
             log_every_n_steps=args.log_every_n_steps,
+            log_dir=args.log_dir,
             norm_pix_loss=args.norm_pix_loss,
             embedding_dimension=args.embedding_dimension,
             hidden_dimension=args.hidden_dimension,
