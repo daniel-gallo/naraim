@@ -81,11 +81,19 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         help="Number of steps until next logging",
     )
     trainer_args.add_argument(
+        "--eval_every_n_steps",
+        type=int,
+        default=5000,
+        help="Number of steps in between evals",
+    )
+
+    trainer_args.add_argument(
         "--log_dir",
         type=str,
         default="checkpoints",
         help="Directory name for saving the checkpoints",
     )
+
     trainer_args.add_argument(
         "--norm_pix_loss",
         type=bool,
@@ -106,8 +114,13 @@ def parse_args():
     trainer_args = parser.add_argument_group("trainer")
     add_trainer_args(trainer_args)
 
-    parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
     parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
+    parser.add_argument(
+        "--max_num_iterations",
+        type=int,
+        required=True,
+        help="Maximum number of iterations",
+    )
 
     args = parser.parse_args()
 
@@ -144,4 +157,4 @@ if __name__ == "__main__":
 
     trainer_kwargs["dummy_batch"] = next(iter(train_ds))
     trainer = Trainer(model_hparams=model_hparams, **trainer_kwargs)
-    trainer.train_model(train_ds, validation_ds, num_epochs=args.epochs)
+    trainer.train_model(train_ds, validation_ds, args.max_num_iterations)

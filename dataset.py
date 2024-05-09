@@ -15,7 +15,7 @@ def decode_image(image_data):
 
 def resize_and_crop_image(image, patch_size):
     # extract the true height and width of the image (they are None when implicit)
-    H, W, C = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
+    H, W, _ = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
     # compute the sqrt of the aspect ratio
     sqrt_ratio = tf.cast(tf.sqrt(H / W), tf.float32)
     # compute the new height and width
@@ -111,12 +111,12 @@ def read_labeled_tfrecord(example, patch_size, rng):
     image = augment_image(image, rng)
 
     image = resize_and_crop_image(image, patch_size)
-    image, image_coords = patchify(image, patch_size)
-    seq_length = tf.shape(image)[0]
+    patches, patch_indices = patchify(image, patch_size)
+    seq_length = tf.shape(patches)[0]
 
     max_seq_len = (224 // patch_size) ** 2
-    image, padding_mask = pad_sequence(image, max_seq_len)
-    image_coords, _ = pad_sequence(image_coords, max_seq_len)
+    patches, _ = pad_sequence(patches, max_seq_len)
+    patch_indices, _ = pad_sequence(patch_indices, max_seq_len)
     label = tf.cast(example["class_id"], tf.int32)
 
     prefix = tf.experimental.numpy.random.randint(
@@ -126,7 +126,7 @@ def read_labeled_tfrecord(example, patch_size, rng):
     attention_matrix = get_attention_matrix(prefix, max_seq_len)
     loss_mask = get_loss_mask(prefix, seq_length, max_seq_len)
 
-    return image, image_coords, label, attention_matrix, loss_mask
+    return patches, patch_indices, label, attention_matrix, loss_mask
 
 
 def pad_sequence(seq, seq_len):
