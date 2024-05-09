@@ -15,7 +15,6 @@ from tqdm import tqdm
 from model import ClassificationModel, PretrainingModel
 
 # TODO: Adding lr scheduler / weight decay?
-# TODO: Train/val/test split. Currently, there're only train and validation dataloaders
 
 
 class Trainer:
@@ -28,6 +27,7 @@ class Trainer:
         log_every_n_steps,
         log_dir,
         norm_pix_loss,
+        decay_steps,
         **model_hparams,
     ):
         super().__init__()
@@ -37,6 +37,7 @@ class Trainer:
         self.rng = jax.random.PRNGKey(self.seed)
         self.norm_pix_loss = norm_pix_loss
         self.log_every_n_steps = log_every_n_steps
+        self.decay_steps = decay_steps
 
         self.log_dir = os.path.join(str(Path.cwd()), f"{log_dir}/{model_type}/")
 
@@ -104,11 +105,13 @@ class Trainer:
         self.state = None
 
     def init_optimizer(self):
-        # TODO: lr_scheduler?
+        lr_schedule = optax.cosine_decay_schedule(
+            init_value=self.lr, decay_steps=self.decay_steps
+        )
 
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            optax.adamw(self.lr),
+            optax.adamw(lr_schedule),
         )
         # Initialize training state
         self.state = train_state.TrainState.create(

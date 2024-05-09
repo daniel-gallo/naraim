@@ -18,6 +18,7 @@ def train_autoregressor(
     log_every_n_steps: int,
     log_dir: str,
     norm_pix_loss: bool,
+    decay_steps: int,
     embedding_dimension: int,
     hidden_dimension: int,
     num_layers: int,
@@ -78,6 +79,7 @@ def train_autoregressor(
         log_every_n_steps=log_every_n_steps,
         log_dir=log_dir,
         norm_pix_loss=norm_pix_loss,
+        decay_steps=decay_steps,
         dtype=jnp.float32,
         patch_size=patch_size,
         max_num_patches=max_num_patches,
@@ -223,6 +225,9 @@ if __name__ == "__main__":
         help="Whether to use a normalized-pixel loss",
     )
     parser.add_argument(
+        "--decay_steps", type=int, default=1000, help="Period of the cosine scheduler"
+    )
+    parser.add_argument(
         "--log_every_n_steps",
         type=int,
         default=10,
@@ -258,6 +263,7 @@ if __name__ == "__main__":
             log_every_n_steps=args.log_every_n_steps,
             log_dir=args.log_dir,
             norm_pix_loss=args.norm_pix_loss,
+            decay_steps=args.decay_steps,
             embedding_dimension=args.embedding_dimension,
             hidden_dimension=args.hidden_dimension,
             num_layers=args.num_layers,
