@@ -90,9 +90,9 @@ rng = tf.random.Generator.from_seed(123, alg="philox")
 def augment_image(image, rng):
     seed = rng.make_seeds(1)[:, 0]
 
-    image = tf.image.stateless_random_contrast(image, lower=0.8, upper=1.2, seed=seed)
-    image = tf.image.stateless_random_brightness(image, max_delta=0.2, seed=seed)
-    image = tf.image.stateless_random_saturation(image, lower=0.8, upper=1.2, seed=seed)
+    # image = tf.image.stateless_random_contrast(image, lower=0.8, upper=1.2, seed=seed)
+    # image = tf.image.stateless_random_brightness(image, max_delta=0.2, seed=seed)
+    # image = tf.image.stateless_random_saturation(image, lower=0.8, upper=1.2, seed=seed)
     image = tf.image.stateless_random_flip_left_right(image, seed)
 
     return image
