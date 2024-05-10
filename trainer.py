@@ -14,8 +14,6 @@ from tqdm import tqdm
 
 from model import ClassificationModel, PretrainingModel
 
-# TODO: Adding lr scheduler / weight decay?
-
 
 class Trainer:
     def __init__(
@@ -76,11 +74,13 @@ class Trainer:
         self.checkpoint_manager = ocp.CheckpointManager(
             ocp.test_utils.erase_and_create_empty(self.log_dir),
             options=options,
+            item_names=("state", "metadata"),
         )
 
-        # Initialize model and logger
+        # Initialize model, logger and optimizer
         self.init_model(dummy_batch, model_type)
         self.init_logger()
+        self.init_optimizer()
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
@@ -117,29 +117,30 @@ class Trainer:
         self.state = None
 
     def init_optimizer(self):
-        self.lr_schedule = optax.warmup_cosine_decay_schedule(
-            init_value=1e-6,
-            peak_value=self.lr,
-            decay_steps=self.max_num_iterations,
-            warmup_steps=self.warmup_steps,
-        )
-
-        optimizer = optax.chain(
-            optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            optax.adamw(
-                self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
-            ),
-        )
-        # Initialize training state
         # If we do not have any checkpoint to load, then create a new state
         if self.loaded_checkpoint_idx == 0:
+            self.lr_schedule = optax.warmup_cosine_decay_schedule(
+                init_value=0.0,
+                peak_value=self.lr,
+                decay_steps=self.max_num_iterations,
+                warmup_steps=self.warmup_steps,
+            )
+
+            optimizer = optax.chain(
+                optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
+                optax.adamw(
+                    self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
+                ),
+            )
+
+            # Initialize training state
             self.state = train_state.TrainState.create(
                 apply_fn=self.model.apply,
                 params=self.init_params if self.state is None else self.state.params,
                 tx=optimizer,
             )
         else:
-            # TODO
+            # Load the model (loaded_checkpoint_idx > 0)
             self.load_model(self.loaded_checkpoint_idx)
 
     def loss_classifier(self, params, rng, batch, train):
@@ -229,8 +230,6 @@ class Trainer:
         return metric
 
     def train_model(self, train_loader, val_loader, max_num_iterations):
-        # Train model for defined number of epochs
-        self.init_optimizer()
         # Track best eval metric
         best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
         hparams_dict = {"learning_rate": float(self.lr_schedule(0)), "seed": self.seed}
@@ -240,8 +239,6 @@ class Trainer:
             f"Best_{metric_to_eval}/train": None,
             f"Best_{metric_to_eval}/val": None,
         }
-
-        step = 0
 
         train_metrics = defaultdict(list)
 
@@ -259,13 +256,12 @@ class Trainer:
                 train_metrics[key].append(aux_output[2 * i])
 
             # Logging
-            step += 1
             if idx > 1 and (idx + 1) % self.log_every_n_steps == 0:
                 for key in self.metrics_keys:
                     self.logger.add_scalar(
                         f"{key}/train",
                         np.array(jax.device_get(train_metrics)[key]).mean(),
-                        step,
+                        idx,
                     )
 
             # Do evaluation once eval_steps
@@ -278,9 +274,10 @@ class Trainer:
                 }
 
                 # Compute the evaluation metrics
+                ckpt_val_loader = val_loader.save()
                 eval_metric = self.eval_model(val_loader)
+                val_loader.restore(ckpt_val_loader)
 
-                # TODO: Make this nicer
                 if metric_to_eval == "mse":
                     eval_metric = -eval_metric
 
@@ -295,7 +292,6 @@ class Trainer:
                         -eval_metric if metric_to_eval == "mse" else eval_metric
                     )
 
-                # TODO: Now there is duplicate code
                 if metric_to_eval == "mse":
                     eval_metric = -eval_metric
 
@@ -324,22 +320,85 @@ class Trainer:
 
         return res
 
+    # Save current model at certain training iteration
     def save_model(self, step):
-        # Save current model at certain training iteration
+        # Define metadata
+        metadata = {
+            "model_type": self.model_type,
+            "iteration": step,
+            "lr_scheduler": {
+                "init_value": 0.0,
+                "peak_value": self.lr,
+                "decay_steps": self.max_num_iterations,
+                "warmup_steps": self.warmup_steps,
+            },
+            "optimizer": {
+                "adamw": {
+                    "beta2": self.beta2,
+                    "weight_decay": self.weight_decay,
+                }
+            },
+        }
+
         self.checkpoint_manager.save(
             step,
-            self.state.params,
-            args=ocp.args.StandardSave(self.state.params),
+            args=ocp.args.Composite(
+                state=ocp.args.StandardSave(self.state.params),  # params of the model
+                metadata=ocp.args.JsonSave(metadata),
+            ),
             force=True,
         )
 
+    # Load model from a certain training iteration
     def load_model(self, step):
-        # Load model from a certain training iteration
-        params = self.checkpoint_manager.restore(step, items=None)
+        # Define target tree
+        target = {
+            "state": self.init_params,
+            "metadata": {
+                "model_type": self.model_type,
+                "iteration": step,
+                "lr_scheduler": {
+                    "init_value": 0.0,
+                    "peak_value": self.lr,
+                    "decay_steps": self.max_num_iterations,
+                    "warmup_steps": self.warmup_steps,
+                },
+                "optimizer": {
+                    "adamw": {
+                        "beta2": self.beta2,
+                        "weight_decay": self.weight_decay,
+                    }
+                },
+            },
+        }
+
+        # Restore checkpoint
+        restored = self.checkpoint_manager.restore(step, items=target)
+
+        # Get model parameters and metadata
+        params, metadata = restored["state"], restored["metadata"]
+        lr_schedule_args = metadata["lr_scheduler"]
+        optimizer_args = metadata["optimizer"]
+
+        # Define lr_schedule
+        self.lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=lr_schedule_args["init_value"],
+            peak_value=lr_schedule_args["peak_value"],
+            decay_steps=lr_schedule_args["decay_steps"],
+            warmup_steps=lr_schedule_args["warmup_steps"],
+        )
+
+        # Define optimizer
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
+            optax.adamw(
+                self.lr_schedule,
+                b2=optimizer_args["adamw"]["beta2"],
+                weight_decay=optimizer_args["adamw"]["weight_decay"],
+            ),
+        )
+
+        # Initialize the state of the model
         self.state = train_state.TrainState.create(
-            apply_fn=self.model.apply,
-            params=params,
-            tx=self.state.tx
-            if self.state
-            else optax.adamw(self.lr),  # Default optimizer
+            apply_fn=self.model.apply, params=params, tx=optimizer
         )
