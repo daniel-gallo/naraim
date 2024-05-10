@@ -139,13 +139,15 @@ class Trainer:
         return loss, (rng, acc)
 
     def loss_autoregressor(self, params, rng, batch, train):
-        image, image_coords, labels, attention_matrix, loss_mask = batch
+        patches, patch_indices, labels, attention_matrices, loss_masks = batch
 
         # Normalize the target
         if self.norm_pix_loss:
-            mean = jnp.mean(image, axis=(-2, -1), keepdims=True)  # shape [bs, 1, 1]
-            var = jnp.var(image, axis=(-2, -1), keepdims=True)  # shape [bs, 1, 1]
-            targets = (image - mean) / (var + 1.0e-6) ** 0.5
+            mean = jnp.mean(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+            var = jnp.var(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+            targets = (patches - mean) / (var + 1.0e-6) ** 0.5
+        else:
+            targets = patches
 
         # Apply rng only for training
         if train:
@@ -156,22 +158,21 @@ class Trainer:
 
         preds = self.model.apply(
             {"params": params},
-            image,
-            patch_indices=image_coords,
+            patches,
+            patch_indices=patch_indices,
             training=train,
-            mask=attention_matrix,
+            mask=attention_matrices,
             rngs=rngs,
         )
 
-        # TODO: Integrate positional embeddings
-        # Pixel-wise MSE
+        # We predict the next patch, so we need to slice the tensors
         loss = (
-            preds - targets
+            preds[:, :-1, :] - targets[:, 1:, :]
         ) ** 2  # shape = [bs, max_num_paches - 1, patch_size ** 2 * num_channels]
 
         # Apply mask on the loss so that gradients are computed
         # for the patches that are between the prefixed and padding patches
-        loss = loss * loss_mask[:, :, None]
+        loss = loss * loss_masks[:, :-1, None]
         loss = jnp.mean(loss)
 
         return loss, rng
