@@ -335,7 +335,7 @@ class Trainer:
         # Test model on all images of a data loader and return avg mse or acc
         total_val, count = 0.0, 0
 
-        for batch in data_loader:
+        for batch in tqdm(data_loader):
             val = self.eval_step(self.state, batch)
             total_val += val * batch[0].shape[0]
             count += batch[0].shape[0]
