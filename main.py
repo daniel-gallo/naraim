@@ -87,7 +87,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         "--log_every_n_steps",
         type=int,
         default=200,
-        help="Number of steps until next logging",
+        help="Number of steps in between logging",
     )
     trainer_args.add_argument(
         "--eval_every_n_steps",
@@ -115,6 +115,13 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         type=int,
         required=True,
         help="Maximum number of iterations",
+    )
+
+    trainer_args.add_argument(
+        "--loaded_checkpoint_idx",
+        type=int,
+        default=0,
+        help="Index of the checkpoint you need to load (> 0). If training is done from the beginning, this parameter should be set to 0.",
     )
     trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
 
