@@ -5,7 +5,7 @@
 #SBATCH --job-name=imagenet
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=08:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=/scratch-shared/fomo_logs/logs/%A/slurm_output_%A.out
 #SBATCH --error=/scratch-shared/fomo_logs/logs/%A/slurm_output_%A.err
 
