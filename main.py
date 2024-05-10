@@ -157,7 +157,6 @@ if __name__ == "__main__":
         load_dataset(get_val_files(), args.patch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
-        .repeat()
         .as_numpy_iterator()
     )
 
