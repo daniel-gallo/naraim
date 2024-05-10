@@ -23,23 +23,29 @@ class Trainer:
         model_type,
         dummy_batch,
         lr,
+        beta2,
+        weight_decay,
         seed,
         log_every_n_steps,
         eval_every_n_steps,
         log_dir,
         norm_pix_loss,
-        decay_steps,
+        max_num_iterations,
+        warmup_steps,
         model_hparams,
     ):
         super().__init__()
         self.model_type = model_type
         self.lr = lr
+        self.beta2 = beta2
+        self.weight_decay = weight_decay
         self.seed = seed
         self.rng = jax.random.PRNGKey(self.seed)
         self.norm_pix_loss = norm_pix_loss
         self.log_every_n_steps = log_every_n_steps
         self.eval_every_n_steps = eval_every_n_steps
-        self.decay_steps = decay_steps
+        self.max_num_iterations = max_num_iterations
+        self.warmup_steps = warmup_steps
 
         self.log_dir = str((Path(log_dir) / model_type).absolute())
 
@@ -104,16 +110,23 @@ class Trainer:
             image_coords,
             training=True,
         )["params"]
+        param_count = sum(x.size for x in jax.tree_leaves(self.init_params))
+        print(f"Number of parameters: {param_count}")
         self.state = None
 
     def init_optimizer(self):
-        self.lr_schedule = optax.cosine_decay_schedule(
-            init_value=self.lr, decay_steps=self.decay_steps
+        self.lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=1e-6,
+            peak_value=self.lr,
+            decay_steps=self.max_num_iterations,
+            warmup_steps=self.warmup_steps,
         )
 
         optimizer = optax.chain(
             optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            optax.adamw(self.lr_schedule),
+            optax.adamw(
+                self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
+            ),
         )
         # Initialize training state
         self.state = train_state.TrainState.create(

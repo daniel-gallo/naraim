@@ -31,7 +31,7 @@ def add_model_args(model_args: argparse._ArgumentGroup):
     Arguments that will be passed to initialize the model
     """
     model_args.add_argument(
-        "--dtype", type=str, default="float32", choices=["float32", "bfloat16"]
+        "--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16"]
     )
     model_args.add_argument("--patch_size", type=int, default=14, help="Patch size")
     model_args.add_argument(
@@ -39,10 +39,10 @@ def add_model_args(model_args: argparse._ArgumentGroup):
     )
     model_args.add_argument("--num_channels", type=int, default=3, help="Num channels")
     model_args.add_argument(
-        "--num_layers", type=int, default=8, help="Number of layers"
+        "--num_layers", type=int, default=12, help="Number of layers"
     )
     model_args.add_argument(
-        "--num_heads", type=int, default=6, help="Number of attention heads"
+        "--num_heads", type=int, default=12, help="Number of attention heads"
     )
     model_args.add_argument(
         "--embedding_dimension",
@@ -53,11 +53,11 @@ def add_model_args(model_args: argparse._ArgumentGroup):
     model_args.add_argument(
         "--hidden_dimension",
         type=int,
-        default=128,
+        default=3072,
         help="Hidden dimension of the MLP of the ViT",
     )
     model_args.add_argument(
-        "--dropout_probability", type=float, default=0.1, help="Dropout rate"
+        "--dropout_probability", type=float, default=0.0, help="Dropout rate"
     )
 
 
@@ -73,17 +73,26 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         help="What to train",
     )
     trainer_args.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    trainer_args.add_argument(
+        "--beta2", type=float, default=0.98, help="Beta2 parameter for AdamW"
+    )
+    trainer_args.add_argument(
+        "--weight_decay",
+        type=float,
+        default=0.01,
+        help="Weight decay for the optimizer",
+    )
     trainer_args.add_argument("--seed", type=int, default=42, help="Seed")
     trainer_args.add_argument(
         "--log_every_n_steps",
         type=int,
-        default=10,
+        default=200,
         help="Number of steps until next logging",
     )
     trainer_args.add_argument(
         "--eval_every_n_steps",
         type=int,
-        default=5000,
+        default=10_000,
         help="Number of steps in between evals",
     )
 
@@ -100,9 +109,14 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         default=True,
         help="Whether to use a normalized-pixel loss",
     )
+
     trainer_args.add_argument(
-        "--decay_steps", type=int, default=1000, help="Period of the cosine scheduler"
+        "--max_num_iterations",
+        type=int,
+        required=True,
+        help="Maximum number of iterations",
     )
+    trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
 
 
 def parse_args():
@@ -114,13 +128,7 @@ def parse_args():
     trainer_args = parser.add_argument_group("trainer")
     add_trainer_args(trainer_args)
 
-    parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
-    parser.add_argument(
-        "--max_num_iterations",
-        type=int,
-        required=True,
-        help="Maximum number of iterations",
-    )
+    parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
 
     args = parser.parse_args()
 
