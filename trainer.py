@@ -70,9 +70,8 @@ class Trainer:
             enable_async_checkpointing=False,
         )
         ## TODO: This will delete the previous log directory (erase_and_create_empty)
-        ## Should we move them automatically to another directory before a new run?
         self.checkpoint_manager = ocp.CheckpointManager(
-            ocp.test_utils.erase_and_create_empty(self.log_dir),
+            self.log_dir,
             options=options,
             item_names=("state", "metadata"),
         )
