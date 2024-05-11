@@ -17,14 +17,31 @@ module load Python/3.11.3-GCCcore-12.3.0
 
 source .venv/bin/activate
 
+log_dir="/scratch-shared/fomo_logs/checkpoints"
+directory="/scratch-shared/fomo_logs/good_checkpoints"
+
+# Check if directory doesn't exist
+if [ ! -d "$directory" ]; then
+    mkdir -p "$directory"
+    echo "Directory created: $directory"
+else
+    echo "Directory already exists: $directory"
+fi
+
+# Check if directory doesn't exist
+if [ ! -d "$log_dir" ]; then
+    mkdir -p "$log_dir"
+    echo "Directory created: $log_dir"
+else
+    echo "Directory already exists: $log_dir"
+fi
+
+
 # Run the program
 python main.py \
     --max_num_iterations 500000 \
-    --log_dir "/scratch-shared/fomo_logs/checkpoints"
+    --log_dir "$log_dir"
 
-
-log_dir="/scratch-shared/fomo_logs/checkpoints"
-directory="/scratch-shared/fomo_logs/good_checkpoints"
 
 ################ Saving the checkpoints in a different way to ensure persistency ################
 # Example: At the _fourth_ run, we will have:
@@ -51,13 +68,6 @@ directory="/scratch-shared/fomo_logs/good_checkpoints"
 #           - state_{idx1}/           
 #           - state_{idx2}/
 
-# Check if directory doesn't exist
-if [ ! -d "$directory" ]; then
-    mkdir -p "$directory"
-    echo "Directory created: $directory"
-else
-    echo "Directory already exists: $directory"
-fi
 
 # Find the highest numbered folder from $directory
 highest_number=$(find "$directory" -maxdepth 1 -type d -printf "%f\n" | grep -E '^[0-9]+$' | sort -n | tail -n 1)
