@@ -30,7 +30,7 @@ class Trainer:
         norm_pix_loss,
         max_num_iterations,
         warmup_steps,
-        loaded_checkpoint_idx,
+        resume_training,
         model_hparams,
     ):
         super().__init__()
@@ -45,7 +45,8 @@ class Trainer:
         self.eval_every_n_steps = eval_every_n_steps
         self.max_num_iterations = max_num_iterations
         self.warmup_steps = warmup_steps
-        self.loaded_checkpoint_idx = loaded_checkpoint_idx
+        self.resume_training = resume_training
+        self.loaded_checkpoint_idx = 0
 
         self.log_dir = str((Path(log_dir) / model_type).absolute())
 
@@ -69,7 +70,6 @@ class Trainer:
             step_prefix="state",
             enable_async_checkpointing=False,
         )
-        ## TODO: This will delete the previous log directory (erase_and_create_empty)
         self.checkpoint_manager = ocp.CheckpointManager(
             self.log_dir,
             options=options,
@@ -117,7 +117,7 @@ class Trainer:
 
     def init_optimizer(self):
         # If we do not have any checkpoint to load, then create a new state
-        if self.loaded_checkpoint_idx == 0:
+        if self.resume_training == False:
             self.lr_schedule = optax.warmup_cosine_decay_schedule(
                 init_value=0.0,
                 peak_value=self.lr,
@@ -139,8 +139,8 @@ class Trainer:
                 tx=optimizer,
             )
         else:
-            # Load the model (loaded_checkpoint_idx > 0)
-            self.load_model(self.loaded_checkpoint_idx)
+            # Load the model (if resume_training == True)
+            self.load_model()
 
     def loss_classifier(self, params, rng, batch, train):
         image, image_coords, labels, attention_matrix, loss_mask = batch
@@ -282,7 +282,7 @@ class Trainer:
 
                 if eval_metric >= best_eval:
                     best_eval = eval_metric
-                    self.save_model(step=(idx + 1))
+                    self.save_model(step=(idx + 1 + self.loaded_checkpoint_idx))
                     best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
                         metric_to_eval
                     ]
@@ -349,30 +349,15 @@ class Trainer:
         )
 
     # Load model from a certain training iteration
-    def load_model(self, step):
-        # Define target tree
-        target = {
-            "state": self.init_params,
-            "metadata": {
-                "model_type": self.model_type,
-                "iteration": step,
-                "lr_scheduler": {
-                    "init_value": 0.0,
-                    "peak_value": self.lr,
-                    "decay_steps": self.max_num_iterations,
-                    "warmup_steps": self.warmup_steps,
-                },
-                "optimizer": {
-                    "adamw": {
-                        "beta2": self.beta2,
-                        "weight_decay": self.weight_decay,
-                    }
-                },
-            },
-        }
-
-        # Restore checkpoint
-        restored = self.checkpoint_manager.restore(step, items=target)
+    def load_model(self):
+        # Restore the lastest checkpoint (the best saved model)
+        self.loaded_checkpoint_idx = self.checkpoint_manager.latest_step()
+        restored = self.checkpoint_manager.restore(
+            self.loaded_checkpoint_idx,
+            args=ocp.args.Composite(
+                state=ocp.args.StandardRestore(self.init_params),
+                metadata=ocp.args.JsonRestore(),
+        ))
 
         # Get model parameters and metadata
         params, metadata = restored["state"], restored["metadata"]

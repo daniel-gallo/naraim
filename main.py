@@ -118,10 +118,10 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     )
 
     trainer_args.add_argument(
-        "--loaded_checkpoint_idx",
-        type=int,
-        default=0,
-        help="Index of the checkpoint you need to load (> 0). If training is done from the beginning, this parameter should be set to 0.",
+        "--resume_training",
+        type=bool,
+        default=False,
+        help="True if we want to train from the last checkpoint. False if we want to train from scratch.",
     )
     trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
 
