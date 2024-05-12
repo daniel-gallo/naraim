@@ -14,6 +14,48 @@ class ResidualBlock(nn.Module):
         return x + self.fn(normalized_x, *args, **kwargs)
 
 
+def dot_product_attention(query, key, value, mask):
+    # Like nn.dot_product_attention but uses float32 before softmax (Karras et al., 2023)
+    # Taken from https://uvadlc-notebooks.readthedocs.io/en/latest/tutorial_notebooks/scaling/JAX/single_gpu_transformer.html
+    num_features = query.shape[-1]
+    dtype = query.dtype
+    scale = num_features**-0.5
+    query = query * scale
+    # Switch dtype right before the dot-product for numerical stability.
+    query = query.astype(jnp.float32)
+    key = key.astype(jnp.float32)
+    weights = jnp.einsum("...qhd,...khd->...hqk", query, key)
+    if mask is not None:
+        weights = jnp.where(mask, weights, jnp.finfo(jnp.float32).min)
+    weights = nn.softmax(weights, axis=-1)
+    # After softmax, switch back to the original dtype
+    weights = weights.astype(dtype)
+    new_vals = jnp.einsum("...hqk,...khd->...qhd", weights, value)
+    new_vals = new_vals.astype(dtype)
+    return new_vals
+
+
+class AttentionBlock(nn.Module):
+    dtype: jnp.dtype
+    num_heads: int
+
+    @nn.compact
+    def __call__(self, x, mask=None):
+        input_features = x.shape[-1]
+
+        qkv = nn.DenseGeneral(
+            features=(self.num_heads, self.num_heads * 3),
+            dtype=self.dtype,
+            name="qkv",
+        )(x)
+        q, k, v = jnp.split(qkv, 3, axis=-1)
+        x = dot_product_attention(q, k, v, mask)
+        x = nn.DenseGeneral(
+            input_features, axis=(-2, -1), dtype=self.dtype, name="output_layer"
+        )(x)
+        return x
+
+
 class TransformerLayer(nn.Module):
     dtype: jnp.dtype
     num_heads: int
@@ -25,16 +67,16 @@ class TransformerLayer(nn.Module):
     def __call__(self, x, training: bool, mask=None):
         attention_residual_block = ResidualBlock(
             dtype=self.dtype,
-            fn=nn.Sequential(
+            fn=nn.remat(nn.Sequential)(
                 [
-                    nn.MultiHeadDotProductAttention(self.num_heads, dtype=self.dtype),
+                    AttentionBlock(dtype=self.dtype, num_heads=self.num_heads),
                     nn.Dropout(self.dropout_probability, deterministic=not training),
                 ]
             ),
         )
         mlp_residual_block = ResidualBlock(
             dtype=self.dtype,
-            fn=nn.Sequential(
+            fn=nn.remat(nn.Sequential)(
                 [
                     nn.Dense(self.hidden_dimension, dtype=self.dtype),
                     nn.gelu,
