@@ -97,10 +97,23 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     )
 
     trainer_args.add_argument(
-        "--log_dir",
+        "--checkpoints_path",
         type=str,
-        default="checkpoints",
-        help="Directory name for saving the checkpoints",
+        required=True,
+        help="Path in which the checkpoints will be saved",
+    )
+
+    trainer_args.add_argument(
+        "--tensorboard_path",
+        type=str,
+        required=True,
+        help="Path in which tensorboard files will be saved",
+    )
+
+    trainer_args.add_argument(
+        "--checkpoint_path_to_load",
+        type=str,
+        help="Path of the checkpoint to be loaded",
     )
 
     trainer_args.add_argument(
@@ -117,12 +130,6 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         help="Maximum number of iterations",
     )
 
-    trainer_args.add_argument(
-        "--resume_training",
-        type=bool,
-        default=False,
-        help="True if we want to train from the last checkpoint. False if we want to train from scratch.",
-    )
     trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
 
 
@@ -151,6 +158,7 @@ def parse_args():
 
 if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
+
     train_ds = (
         load_dataset(get_train_files(), args.patch_size)
         .shuffle(10 * args.batch_size)

@@ -1,4 +1,3 @@
-import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -9,8 +8,9 @@ import optax
 import orbax.checkpoint as ocp
 from flax.training import train_state
 from jax import random
+from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 from model import ClassificationModel, PretrainingModel
 
@@ -26,11 +26,12 @@ class Trainer:
         seed,
         log_every_n_steps,
         eval_every_n_steps,
-        log_dir,
+        checkpoints_path,
+        tensorboard_path,
+        checkpoint_path_to_load,
         norm_pix_loss,
         max_num_iterations,
         warmup_steps,
-        resume_training,
         model_hparams,
     ):
         super().__init__()
@@ -45,10 +46,8 @@ class Trainer:
         self.eval_every_n_steps = eval_every_n_steps
         self.max_num_iterations = max_num_iterations
         self.warmup_steps = warmup_steps
-        self.resume_training = resume_training
-        self.loaded_checkpoint_idx = 0
-
-        self.log_dir = str((Path(log_dir) / model_type).absolute())
+        self.tensorboard_path = tensorboard_path
+        self.checkpoints_path = Path(checkpoints_path).absolute()
 
         # Get empty model based on model_type
         self.model = (
@@ -57,29 +56,12 @@ class Trainer:
             else ClassificationModel(**model_hparams)
         )
 
-        # Checkpointing
-        ## Create a logging directory if it has not been created yet
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
-
-        ## Set up the checkpointer
-        ## TODO: Change the enable_async_checkpointing = True when working on multiple GPUs
-        options = ocp.CheckpointManagerOptions(
-            create=True,
-            max_to_keep=2,
-            step_prefix="state",
-            enable_async_checkpointing=False,
-        )
-        self.checkpoint_manager = ocp.CheckpointManager(
-            self.log_dir,
-            options=options,
-            item_names=("state", "metadata"),
-        )
-
         # Initialize model, logger and optimizer
         self.init_model(dummy_batch, model_type)
         self.init_logger()
         self.init_optimizer()
+        if checkpoint_path_to_load:
+            self.load_checkpoint(checkpoint_path_to_load)
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
@@ -98,7 +80,7 @@ class Trainer:
         )
 
     def init_logger(self):
-        self.logger = SummaryWriter(log_dir=self.log_dir)
+        self.logger = SummaryWriter(log_dir=self.tensorboard_path)
 
     def init_model(self, exmp_batch, model_type):
         self.rng, init_rng, dropout_init_rng = random.split(self.rng, 3)
@@ -113,34 +95,29 @@ class Trainer:
         )["params"]
         param_count = sum(x.size for x in jax.tree_leaves(self.init_params))
         print(f"Number of parameters: {param_count}")
-        self.state = None
 
     def init_optimizer(self):
         # If we do not have any checkpoint to load, then create a new state
-        if self.resume_training == False:
-            self.lr_schedule = optax.warmup_cosine_decay_schedule(
-                init_value=0.0,
-                peak_value=self.lr,
-                decay_steps=self.max_num_iterations,
-                warmup_steps=self.warmup_steps,
-            )
+        self.lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=0.0,
+            peak_value=self.lr,
+            decay_steps=self.max_num_iterations,
+            warmup_steps=self.warmup_steps,
+        )
 
-            optimizer = optax.chain(
-                optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-                optax.adamw(
-                    self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
-                ),
-            )
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
+            optax.adamw(
+                self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
+            ),
+        )
 
-            # Initialize training state
-            self.state = train_state.TrainState.create(
-                apply_fn=self.model.apply,
-                params=self.init_params if self.state is None else self.state.params,
-                tx=optimizer,
-            )
-        else:
-            # Load the model (if resume_training == True)
-            self.load_model()
+        # Initialize training state
+        self.state = train_state.TrainState.create(
+            apply_fn=self.model.apply,
+            params=self.init_params,
+            tx=optimizer,
+        )
 
     def loss_classifier(self, params, rng, batch, train):
         image, image_coords, labels, attention_matrix, loss_mask = batch
@@ -231,7 +208,7 @@ class Trainer:
     def train_model(self, train_loader, val_loader, max_num_iterations):
         # Track best eval metric
         best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
-        hparams_dict = {"learning_rate": float(self.lr_schedule(0)), "seed": self.seed}
+        hparams_dict = {"learning_rate": self.lr, "seed": self.seed}
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
         best_metrics = {
@@ -241,11 +218,18 @@ class Trainer:
 
         train_metrics = defaultdict(list)
 
-        for idx, batch in enumerate(tqdm(train_loader, desc="Training", leave=False)):
-            # Finish training after the max_num_iterations steps
-            if idx >= max_num_iterations:
-                break
-
+        # If we load the checkpoint, the first step will not be zero
+        first_step = self.state.step
+        for idx, batch in zip(
+            trange(
+                first_step,
+                max_num_iterations,
+                initial=first_step,
+                total=max_num_iterations,
+                desc="Training",
+            ),
+            train_loader,
+        ):
             # aux_output:
             # - (loss, rng) for autoregressor
             # - (loss, rng, acc) for classification
@@ -255,7 +239,7 @@ class Trainer:
                 train_metrics[key].append(aux_output[2 * i])
 
             # Logging
-            if idx > 1 and (idx + 1) % self.log_every_n_steps == 0:
+            if idx > first_step and (idx + 1) % self.log_every_n_steps == 0:
                 for key in self.metrics_keys:
                     self.logger.add_scalar(
                         f"{key}/train",
@@ -264,7 +248,7 @@ class Trainer:
                     )
 
             # Do evaluation once eval_steps
-            if idx > 1 and (idx + 1) % self.eval_every_n_steps == 0:
+            if idx > first_step and (idx + 1) % self.eval_every_n_steps == 0:
                 # Compute train metrics
                 train_metrics = jax.device_get(train_metrics)
                 train_metrics = {
@@ -282,7 +266,7 @@ class Trainer:
 
                 if eval_metric >= best_eval:
                     best_eval = eval_metric
-                    self.save_model(step=(idx + 1 + self.loaded_checkpoint_idx))
+                    self.save_checkpoint(step=idx + 1)
                     best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
                         metric_to_eval
                     ]
@@ -319,70 +303,22 @@ class Trainer:
 
         return res
 
-    # Save current model at certain training iteration
-    def save_model(self, step):
-        # Define metadata
-        metadata = {
-            "model_type": self.model_type,
-            "iteration": step,
-            "lr_scheduler": {
-                "init_value": 0.0,
-                "peak_value": self.lr,
-                "decay_steps": self.max_num_iterations,
-                "warmup_steps": self.warmup_steps,
-            },
-            "optimizer": {
-                "adamw": {
-                    "beta2": self.beta2,
-                    "weight_decay": self.weight_decay,
-                }
-            },
-        }
+    def save_checkpoint(self, step):
+        checkpointer = AsyncCheckpointer(PyTreeCheckpointHandler())
+        checkpointer.save(self.checkpoints_path / f"step_{step}", self.state)
 
-        self.checkpoint_manager.save(
-            step,
-            args=ocp.args.Composite(
-                state=ocp.args.StandardSave(self.state.params),  # params of the model
-                metadata=ocp.args.JsonSave(metadata),
-            ),
-            force=True,
-        )
-
-    # Load model from a certain training iteration
-    def load_model(self):
+    def load_checkpoint(self, checkpoint_path_to_load):
         # Restore the lastest checkpoint (the best saved model)
-        self.loaded_checkpoint_idx = self.checkpoint_manager.latest_step()
-        restored = self.checkpoint_manager.restore(
-            self.loaded_checkpoint_idx,
-            args=ocp.args.Composite(
-                state=ocp.args.StandardRestore(self.init_params),
-                metadata=ocp.args.JsonRestore(),
-        ))
+        checkpointer = ocp.PyTreeCheckpointer()
+        restored = checkpointer.restore(Path(checkpoint_path_to_load).absolute())
 
-        # Get model parameters and metadata
-        params, metadata = restored["state"], restored["metadata"]
-        lr_schedule_args = metadata["lr_scheduler"]
-        optimizer_args = metadata["optimizer"]
-
-        # Define lr_schedule
-        self.lr_schedule = optax.warmup_cosine_decay_schedule(
-            init_value=lr_schedule_args["init_value"],
-            peak_value=lr_schedule_args["peak_value"],
-            decay_steps=lr_schedule_args["decay_steps"],
-            warmup_steps=lr_schedule_args["warmup_steps"],
+        restored_opt_state = jax.tree_unflatten(
+            jax.tree_structure(self.state.opt_state),
+            jax.tree_leaves(restored["opt_state"]),
         )
 
-        # Define optimizer
-        optimizer = optax.chain(
-            optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
-            optax.adamw(
-                self.lr_schedule,
-                b2=optimizer_args["adamw"]["beta2"],
-                weight_decay=optimizer_args["adamw"]["weight_decay"],
-            ),
-        )
-
-        # Initialize the state of the model
-        self.state = train_state.TrainState.create(
-            apply_fn=self.model.apply, params=params, tx=optimizer
+        self.state = self.state.replace(
+            params=restored["params"],
+            step=int(restored["step"]),
+            opt_state=restored_opt_state,
         )
