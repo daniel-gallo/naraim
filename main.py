@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
     train_ds = (
         load_dataset(get_train_files(), args.patch_size)
-        .shuffle(10 * args.batch_size)
+        .shuffle(2 * args.batch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
         .repeat()

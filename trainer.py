@@ -219,6 +219,7 @@ class Trainer:
         train_metrics = defaultdict(list)
 
         # If we load the checkpoint, the first step will not be zero
+        jax.profiler.start_trace(self.tensorboard_path)
         first_step = self.state.step
         for idx, batch in zip(
             trange(
@@ -233,7 +234,8 @@ class Trainer:
             # aux_output:
             # - (loss, rng) for autoregressor
             # - (loss, rng, acc) for classification
-            self.state, aux_output = self.train_step(self.state, self.rng, batch)
+            with jax.profiler.StepTraceAnnotation("train_step", step_num=idx + 1):
+                self.state, aux_output = self.train_step(self.state, self.rng, batch)
             self.rng = aux_output[1]  # rng
             for i, key in enumerate(self.metrics_keys):
                 train_metrics[key].append(aux_output[2 * i])
@@ -287,6 +289,8 @@ class Trainer:
                 # Reset train_metrics dictionary
                 train_metrics = defaultdict(list)
 
+        train_metrics["mse"][-1].block_until_ready()
+        jax.profiler.stop_trace()
         self.logger.flush()
         self.logger.close()
 

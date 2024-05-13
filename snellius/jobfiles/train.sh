@@ -5,7 +5,7 @@
 #SBATCH --job-name=train
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=24:00:00
+#SBATCH --time=00:10:00
 #SBATCH --output=/scratch-shared/fomo_logs/%A/stdout.txt
 #SBATCH --error=/scratch-shared/fomo_logs/%A/stderr.txt
 
@@ -23,6 +23,8 @@ module load Python/3.11.3-GCCcore-12.3.0
 source .venv/bin/activate
 
 python main.py \
-    --max_num_iterations 500000 \
+    --batch_size 128 \
+    --max_num_iterations 4 \
+    --warmup_steps 1 \
     --checkpoints_path "$checkpoints_path" \
     --tensorboard_path "$tensorboard_path"
