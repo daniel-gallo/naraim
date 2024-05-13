@@ -44,7 +44,7 @@ class AttentionBlock(nn.Module):
         input_features = x.shape[-1]
 
         qkv = nn.DenseGeneral(
-            features=(self.num_heads, self.num_heads * 3),
+            features=(self.num_heads, input_features // self.num_heads * 3),
             dtype=self.dtype,
             name="qkv",
         )(x)
