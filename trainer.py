@@ -212,7 +212,7 @@ class Trainer:
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
         best_metrics = {
-            f"Best_{metric_to_eval}/train": None,
+            # f"Best_{metric_to_eval}/train": None,
             f"Best_{metric_to_eval}/val": None,
         }
 
@@ -246,17 +246,13 @@ class Trainer:
                         np.array(jax.device_get(train_metrics)[key]).mean(),
                         idx,
                     )
+                # Reinitialize the train_metrics
+                train_metrics = defaultdict(list)
 
             # Do evaluation once eval_steps
             if idx > first_step and (idx + 1) % self.eval_every_n_steps == 0:
-                # Compute train metrics
-                train_metrics = jax.device_get(train_metrics)
-                train_metrics = {
-                    key: np.array(metric).mean()
-                    for key, metric in train_metrics.items()
-                }
-
-                # Compute the evaluation metrics
+                self.save_checkpoint(step=idx + 1)
+                # Evaluate the model and return the eval metrics
                 ckpt_val_loader = val_loader.save()
                 eval_metric = self.eval_model(val_loader)
                 val_loader.restore(ckpt_val_loader)
@@ -266,10 +262,6 @@ class Trainer:
 
                 if eval_metric >= best_eval:
                     best_eval = eval_metric
-                    self.save_checkpoint(step=idx + 1)
-                    best_metrics[f"Best_{metric_to_eval}/train"] = train_metrics[
-                        metric_to_eval
-                    ]
 
                     best_metrics[f"Best_{metric_to_eval}/val"] = (
                         -eval_metric if metric_to_eval == "mse" else eval_metric
@@ -284,10 +276,9 @@ class Trainer:
                 hparams_dict["learning_rate"] = float(self.lr_schedule(idx))
                 self.logger.add_hparams(hparams_dict, best_metrics)
 
-                # Reset train_metrics dictionary
-                train_metrics = defaultdict(list)
+                # Flush the logger
+                self.logger.flush()
 
-        self.logger.flush()
         self.logger.close()
 
     def eval_model(self, data_loader):
