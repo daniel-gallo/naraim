@@ -212,7 +212,6 @@ class Trainer:
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
         best_metrics = {
-            # f"Best_{metric_to_eval}/train": None,
             f"Best_{metric_to_eval}/val": None,
         }
 

@@ -87,13 +87,9 @@ def get_loss_mask(prefix, seq_length, max_seq_length):
     return tf.concat([zeros_start, ones, zeros_end], axis=0)
 
 
-
 def augment_image(image, rng):
     seed = rng.make_seeds(1)[:, 0]
 
-    # image = tf.image.stateless_random_contrast(image, lower=0.8, upper=1.2, seed=seed)
-    # image = tf.image.stateless_random_brightness(image, max_delta=0.2, seed=seed)
-    # image = tf.image.stateless_random_saturation(image, lower=0.8, upper=1.2, seed=seed)
     image = tf.image.stateless_random_flip_left_right(image, seed)
 
     return image
