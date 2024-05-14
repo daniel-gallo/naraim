@@ -169,7 +169,7 @@ if __name__ == "__main__":
         .as_numpy_iterator()
     )
 
-    validation_ds = prefetch(
+    validation_ds = (
         load_dataset(get_val_files(), args.patch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)

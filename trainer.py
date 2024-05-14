@@ -13,6 +13,7 @@ from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
+from dataset import prefetch
 from model import ClassificationModel, PretrainingModel
 
 
@@ -268,7 +269,7 @@ class Trainer:
                 self.save_checkpoint(step=idx + 1)
                 # Evaluate the model and return the eval metrics
                 ckpt_val_loader = val_loader.save()
-                eval_metric = self.eval_model(val_loader)
+                eval_metric = self.eval_model(prefetch(val_loader))
                 val_loader.restore(ckpt_val_loader)
 
                 if metric_to_eval == "mse":
