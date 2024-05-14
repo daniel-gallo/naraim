@@ -26,4 +26,5 @@ python main.py \
     --max_num_iterations 500000 \
     --checkpoints_path "$checkpoints_path" \
     --tensorboard_path "$tensorboard_path" \
+    --native_resolutions \
     --checkpoint_path_to_load "/scratch-shared/fomo_logs/6244366/checkpoints/step_80000"

@@ -146,9 +146,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
     parser.add_argument(
         "--native_resolutions",
-        type=bool,
-        default=True,
-        help="True if we use the native resolutions of the images",
+        action="store_true",
+        help="Whether we use the native resolutions of the images",
     )
 
     args = parser.parse_args()
@@ -165,6 +164,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
+
+    print(f"Training with native resolutions: {args.native_resolutions}")
 
     train_ds = prefetch(
         load_dataset(get_train_files(), args.patch_size, args.native_resolutions)
