@@ -248,10 +248,10 @@ class Trainer:
                     )
                 # Reinitialize the train_metrics
                 train_metrics = defaultdict(list)
-                    
-                    
+
             # Do evaluation once eval_steps
             if idx > first_step and (idx + 1) % self.eval_every_n_steps == 0:
+                self.save_checkpoint(step=idx + 1)
                 # Evaluate the model and return the eval metrics
                 ckpt_val_loader = val_loader.save()
                 eval_metric = self.eval_model(val_loader)
@@ -262,7 +262,6 @@ class Trainer:
 
                 if eval_metric >= best_eval:
                     best_eval = eval_metric
-                    self.save_checkpoint(step=idx + 1)
 
                     best_metrics[f"Best_{metric_to_eval}/val"] = (
                         -eval_metric if metric_to_eval == "mse" else eval_metric
