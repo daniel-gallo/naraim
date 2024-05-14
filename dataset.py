@@ -84,8 +84,6 @@ def get_loss_mask(prefix, seq_length, max_seq_length):
     return tf.concat([zeros_start, ones, zeros_end], axis=0)
 
 
-rng = tf.random.Generator.from_seed(123, alg="philox")
-
 
 def augment_image(image, rng):
     seed = rng.make_seeds(1)[:, 0]
