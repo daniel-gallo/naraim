@@ -129,6 +129,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         required=True,
         help="Maximum number of iterations",
     )
+    trainer_args.add_argument("--profile", action="store_true")
 
     trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
 
@@ -161,7 +162,7 @@ if __name__ == "__main__":
 
     train_ds = prefetch(
         load_dataset(get_train_files(), args.patch_size)
-        .shuffle(10 * args.batch_size)
+        .shuffle(4 * args.batch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
         .repeat()

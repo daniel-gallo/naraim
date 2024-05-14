@@ -1,4 +1,5 @@
 from collections import defaultdict
+from contextlib import nullcontext
 from pathlib import Path
 
 import jax
@@ -33,6 +34,7 @@ class Trainer:
         max_num_iterations,
         warmup_steps,
         model_hparams,
+        profile,
     ):
         super().__init__()
         self.model_type = model_type
@@ -48,6 +50,7 @@ class Trainer:
         self.warmup_steps = warmup_steps
         self.tensorboard_path = tensorboard_path
         self.checkpoints_path = Path(checkpoints_path).absolute()
+        self.profile = profile
 
         # Get empty model based on model_type
         self.model = (
@@ -217,6 +220,9 @@ class Trainer:
 
         train_metrics = defaultdict(list)
 
+        if self.profile:
+            jax.profiler.start_trace(self.tensorboard_path)
+
         # If we load the checkpoint, the first step will not be zero
         first_step = self.state.step
         for idx, batch in zip(
@@ -229,10 +235,19 @@ class Trainer:
             ),
             train_loader,
         ):
-            # aux_output:
-            # - (loss, rng) for autoregressor
-            # - (loss, rng, acc) for classification
-            self.state, aux_output = self.train_step(self.state, self.rng, batch)
+            if self.profile:
+                context_manager = jax.profiler.StepTraceAnnotation(
+                    "train_step",
+                    step_num=idx + 1,
+                )
+            else:
+                context_manager = nullcontext()
+            with context_manager:
+                # aux_output:
+                # - (loss, rng) for autoregressor
+                # - (loss, rng, acc) for classification
+                self.state, aux_output = self.train_step(self.state, self.rng, batch)
+
             self.rng = aux_output[1]  # rng
             for i, key in enumerate(self.metrics_keys):
                 train_metrics[key].append(aux_output[2 * i])
@@ -277,6 +292,10 @@ class Trainer:
 
                 # Flush the logger
                 self.logger.flush()
+
+        if self.profile:
+            train_metrics[metric_to_eval][-1].block_until_ready()
+            jax.profiler.stop_trace()
 
         self.logger.close()
 
