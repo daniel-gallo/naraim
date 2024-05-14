@@ -95,7 +95,7 @@ def augment_image(image, rng):
     return image
 
 
-def read_labeled_tfrecord(example, patch_size, rng):
+def read_labeled_tfrecord(example, patch_size, rng, native_resolutions):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
         "path": tf.io.FixedLenFeature([], tf.string),
@@ -107,7 +107,12 @@ def read_labeled_tfrecord(example, patch_size, rng):
     image = decode_image(example["image"])
     image = augment_image(image, rng)
 
-    image = resize_and_crop_image(image, patch_size)
+    if native_resolutions == True:
+        image = resize_and_crop_image(image, patch_size)
+    else:
+        image = tf.image.resize(image, [224, 224])
+        image.set_shape((224, 224, image.shape[2]))
+
     patches, patch_indices = patchify(image, patch_size)
     seq_length = tf.shape(patches)[0]
 
@@ -140,13 +145,14 @@ def pad_sequence(seq, seq_len):
     return seq, padding_mask
 
 
-def load_dataset(filenames, patch_size):
+def load_dataset(filenames, patch_size, native_resolutions):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
 
     # Create a random number generator for data augmentations
     rng = tf.random.Generator.from_seed(42, alg="philox")
     dataset = dataset.map(
-        lambda x: read_labeled_tfrecord(x, patch_size, rng), num_parallel_calls=AUTOTUNE
+        lambda x: read_labeled_tfrecord(x, patch_size, rng, native_resolutions),
+        num_parallel_calls=AUTOTUNE,
     )
     return dataset
 
@@ -174,14 +180,16 @@ if __name__ == "__main__":
     batch_size = 4
     image_dir = "./tfrecords"
     train_files = glob(os.path.join(image_dir, "*.tfrec"))
-    train_dataset = load_dataset(train_files, 14)
-    train_ds = (
+    train_dataset = load_dataset(train_files, 14, native_resolutions=False)
+    train_ds = prefetch(
         train_dataset.shuffle(10 * batch_size)
         .batch(batch_size)
         .prefetch(tf.data.AUTOTUNE)
         .repeat()
         .as_numpy_iterator()
     )
+
+    h = train_ds.save()
 
     for batch in train_ds:
         image, image_coords, label, attention_matrix, loss_mask = batch
@@ -191,5 +199,7 @@ if __name__ == "__main__":
         print(attention_matrix.shape)
         print(loss_mask.shape)
 
-        plt.imshow(loss_mask)
+        plt.imshow(
+            loss_mask
+        )  # we should have only one padding at the end for non-native resolutions
         plt.show()

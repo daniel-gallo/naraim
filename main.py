@@ -144,6 +144,12 @@ def parse_args():
     add_trainer_args(trainer_args)
 
     parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
+    parser.add_argument(
+        "--native_resolutions",
+        type=bool,
+        default=True,
+        help="True if we use the native resolutions of the images",
+    )
 
     args = parser.parse_args()
 
@@ -161,7 +167,7 @@ if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
     train_ds = prefetch(
-        load_dataset(get_train_files(), args.patch_size)
+        load_dataset(get_train_files(), args.patch_size, args.native_resolutions)
         .shuffle(4 * args.batch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
@@ -170,7 +176,7 @@ if __name__ == "__main__":
     )
 
     validation_ds = (
-        load_dataset(get_val_files(), args.patch_size)
+        load_dataset(get_val_files(), args.patch_size, args.native_resolutions)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
         .as_numpy_iterator()
