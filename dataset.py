@@ -1,6 +1,9 @@
+import collections
+import itertools
 import os
 from glob import glob
 
+import jax
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
@@ -152,6 +155,25 @@ def load_dataset(filenames, patch_size):
         lambda x: read_labeled_tfrecord(x, patch_size, rng), num_parallel_calls=AUTOTUNE
     )
     return dataset
+
+
+def prefetch(iterator):
+    # Prefetches the batches to the accelerator to avoid waiting in between iterations
+
+    queue = collections.deque()
+
+    def _prefetch(x):
+        # Note that device_put is async
+        return jax.device_put(x)
+
+    def enqueue(n):
+        for data in itertools.islice(iterator, n):
+            queue.append(jax.tree.map(_prefetch, data))
+
+    enqueue(2)
+    while queue:
+        yield queue.popleft()
+        enqueue(1)
 
 
 if __name__ == "__main__":

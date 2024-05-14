@@ -3,7 +3,7 @@ from pathlib import Path
 
 import tensorflow as tf
 
-from dataset import load_dataset
+from dataset import load_dataset, prefetch
 from trainer import Trainer
 
 
@@ -159,7 +159,7 @@ def parse_args():
 if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
-    train_ds = (
+    train_ds = prefetch(
         load_dataset(get_train_files(), args.patch_size)
         .shuffle(10 * args.batch_size)
         .batch(args.batch_size)
@@ -168,7 +168,7 @@ if __name__ == "__main__":
         .as_numpy_iterator()
     )
 
-    validation_ds = (
+    validation_ds = prefetch(
         load_dataset(get_val_files(), args.patch_size)
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
