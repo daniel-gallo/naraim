@@ -17,6 +17,7 @@ def test_classification_model():
     embedding_dimension = 768
     hidden_dimension = 128
     dropout_probability = 0.1
+    num_channels = 1
 
     x = jnp.zeros((bs, num_patches, patch_size))
     patch_indices = jnp.zeros((bs, num_patches, 2), dtype=int)
@@ -30,6 +31,8 @@ def test_classification_model():
         embedding_dimension=embedding_dimension,
         hidden_dimension=hidden_dimension,
         dropout_probability=dropout_probability,
+        patch_size=patch_size,
+        num_channels=num_channels,
     )
 
     rng = random.key(seed=0)

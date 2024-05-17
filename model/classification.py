@@ -2,7 +2,7 @@ import flax.linen as nn
 import jax.numpy as jnp
 
 from model.common import InitialProjection
-from model.positional import PositionalEncoding
+from model.positional import FractionalPositionalEncoding, PositionalEncoding
 from model.transformer import Transformer
 
 
@@ -32,23 +32,29 @@ class ClassificationHead(nn.Module):
 
 class ClassificationModel(nn.Module):
     dtype: jnp.dtype
+    patch_size: int
     max_num_patches: int
+    num_channels: int
     num_categories: int
     num_layers: int
     num_heads: int
     embedding_dimension: int
     hidden_dimension: int
     dropout_probability: float
+    use_fractional_positional_encoding: bool = False
 
     @nn.compact
     def __call__(self, x, patch_indices, training: bool):
         x = InitialProjection(
             dtype=self.dtype, embedding_dimension=self.embedding_dimension
         )(x)
-        x = PositionalEncoding(
-            embedding_dimension=self.embedding_dimension,
-            max_num_patches=self.max_num_patches,
-        )(x, patch_indices)
+        if self.use_fractional_positional_encoding:
+            x = FractionalPositionalEncoding()(x, patch_indices)
+        else:
+            x = PositionalEncoding(
+                embedding_dimension=self.embedding_dimension,
+                max_num_patches=self.max_num_patches,
+            )(x, patch_indices)
         x = Transformer(
             dtype=self.dtype,
             num_layers=self.num_layers,

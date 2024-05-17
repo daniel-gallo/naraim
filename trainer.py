@@ -31,6 +31,7 @@ class Trainer:
         checkpoints_path,
         tensorboard_path,
         checkpoint_path_to_load,
+        load_only_params,
         norm_pix_loss,
         max_num_iterations,
         warmup_steps,
@@ -65,7 +66,7 @@ class Trainer:
         self.init_logger()
         self.init_optimizer()
         if checkpoint_path_to_load:
-            self.load_checkpoint(checkpoint_path_to_load)
+            self.load_checkpoint(checkpoint_path_to_load, model_type, load_only_params)
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
@@ -317,18 +318,34 @@ class Trainer:
         checkpointer = AsyncCheckpointer(PyTreeCheckpointHandler())
         checkpointer.save(self.checkpoints_path / f"step_{step}", self.state)
 
-    def load_checkpoint(self, checkpoint_path_to_load):
+    def load_checkpoint(
+        self, checkpoint_path_to_load, model_type, load_only_params=False
+    ):
         # Restore the lastest checkpoint (the best saved model)
         checkpointer = ocp.PyTreeCheckpointer()
         restored = checkpointer.restore(Path(checkpoint_path_to_load).absolute())
 
-        restored_opt_state = jax.tree_unflatten(
-            jax.tree_structure(self.state.opt_state),
-            jax.tree_leaves(restored["opt_state"]),
-        )
+        if load_only_params:
+            assert model_type == "classifier"
 
-        self.state = self.state.replace(
-            params=restored["params"],
-            step=int(restored["step"]),
-            opt_state=restored_opt_state,
-        )
+            if "PretrainingHead_0" in restored["params"]:
+                restored["params"].pop("PretrainingHead_0")
+                restored["params"]["ClassificationHead_0"] = self.state.params[
+                    "ClassificationHead_0"
+                ]
+
+            self.state = self.state.replace(
+                params=restored["params"],
+            )
+
+        else:
+            restored_opt_state = jax.tree_unflatten(
+                jax.tree_structure(self.state.opt_state),
+                jax.tree_leaves(restored["opt_state"]),
+            )
+
+            self.state = self.state.replace(
+                params=restored["params"],
+                step=int(restored["step"]),
+                opt_state=restored_opt_state,
+            )

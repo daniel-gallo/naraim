@@ -15,6 +15,9 @@ python main.py \
     --warmup_steps 3 \
     --batch_size 32 \
     --eval_every_n_steps 10 \
-    --checkpoints_path checkpoints/tiny/autoregressor \
-    --tensorboard_path tensorboard/tiny/autoregressor \
-    # --checkpoint_path_to_load checkpoints/step_10
+    --checkpoints_path checkpoints/tiny/classifier \
+    --tensorboard_path tensorboard/tiny/classifier \
+    --model_type classifier \
+    --checkpoint_path_to_load checkpoints/tiny/autoregressor/step_20 \
+    --num_categories 1000 \
+    --load_only_params \
