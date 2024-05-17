@@ -32,7 +32,9 @@ class ClassificationHead(nn.Module):
 
 class ClassificationModel(nn.Module):
     dtype: jnp.dtype
+    patch_size: int
     max_num_patches: int
+    num_channels: int
     num_categories: int
     num_layers: int
     num_heads: int
