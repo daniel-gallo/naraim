@@ -5,6 +5,7 @@ Adapted from: https://keras.io/examples/keras_recipes/creating_tfrecords/
 """
 
 import os
+import random
 
 import tensorflow as tf
 from tqdm import tqdm
@@ -60,11 +61,11 @@ def parse_tfrecord_fn(example):
 
 
 def main():
-    data_split = "val"
+    data_split = "train"
 
     assert data_split in ["train", "val"]
 
-    tfrecords_dir = f"tfrecords_imagenet_{data_split}"
+    tfrecords_dir = f"tfrecords_imagenet_shuffled_{data_split}"
     images_dir = f"/scratch-nvme/ml-datasets/imagenet/ILSVRC/Data/CLS-LOC/{data_split}/"
 
     classes = set()
@@ -88,6 +89,10 @@ def main():
         {"image_id": i, "class_id": class_mapping[cls], "path": path}
         for i, (path, cls) in enumerate(datapoints)
     ]
+
+    # Shuffle datapoints
+    random.shuffle(annotations)
+
     num_samples = 4096
     num_tfrecords = len(annotations) // num_samples
 
