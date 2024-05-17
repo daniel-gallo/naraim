@@ -75,3 +75,27 @@ class PositionalEncoding(nn.Module):
         x = x + positions
 
         return x
+
+
+class FractionalPositionalEncoding(nn.Module):
+    @nn.compact
+    def __call__(self, x: jax.Array, patch_indices: jax.Array):
+        """
+        Input:
+            x: Array of shape (batch_size, num_patches, embedding_dimension)
+            patch_indices: Array of shape (batch_size, num_patches, 2)
+        Output:
+            x: Array of shape (batch_size, num_patches, embedding_dimension)
+        """
+        embedding_dimension = x.shape[-1]
+
+        heights = patch_indices[:, :, 0].max(axis=1)
+        widths = patch_indices[:, :, 1].max(axis=1)
+
+        fractional_heights = patch_indices[:, :, 0:1] / heights
+        fractional_widths = patch_indices[:, :, 1:2] / widths
+
+        height_embeddings = nn.Dense(embedding_dimension)(fractional_heights)
+        widths_embeddings = nn.Dense(embedding_dimension)(fractional_widths)
+
+        return x + height_embeddings + widths_embeddings

@@ -59,6 +59,7 @@ def add_model_args(model_args: argparse._ArgumentGroup):
     model_args.add_argument(
         "--dropout_probability", type=float, default=0.0, help="Dropout rate"
     )
+    model_args.add_argument("--use_fractional_positional_encoding", action="store_true")
 
 
 def add_trainer_args(trainer_args: argparse._ArgumentGroup):
