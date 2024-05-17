@@ -59,6 +59,9 @@ def add_model_args(model_args: argparse._ArgumentGroup):
     model_args.add_argument(
         "--dropout_probability", type=float, default=0.0, help="Dropout rate"
     )
+    model_args.add_argument(
+        "--num_categories", type=int, help="Number of classes for classifier"
+    )
 
 
 def add_trainer_args(trainer_args: argparse._ArgumentGroup):
@@ -117,6 +120,13 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     )
 
     trainer_args.add_argument(
+        "--load_only_params",
+        action="store_true",
+        default=False,
+        help="Load only model params from the checkpoint",
+    )
+
+    trainer_args.add_argument(
         "--norm_pix_loss",
         type=bool,
         default=True,
@@ -158,6 +168,9 @@ def parse_args():
     trainer_kwargs = {
         a.dest: getattr(args, a.dest, None) for a in trainer_args._group_actions
     }
+
+    if trainer_kwargs["model_type"] == "autoregressor":
+        model_hparams.pop("num_categories")
 
     return args, model_hparams, trainer_kwargs
 
