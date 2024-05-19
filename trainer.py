@@ -38,6 +38,8 @@ class Trainer:
         warmup_steps,
         model_hparams,
         profile,
+        grad_clip_norm,
+        lr_end_value,
         run_visualization,
         randomize_visualized_images,
         n_images_to_visualize,
@@ -57,6 +59,8 @@ class Trainer:
         self.tensorboard_path = tensorboard_path
         self.checkpoints_path = Path(checkpoints_path).absolute()
         self.profile = profile
+        self.lr_end_value = lr_end_value
+        self.grad_clip_norm = grad_clip_norm
         self.run_visualization = run_visualization
         self.randomize_visualized_images = randomize_visualized_images
         self.n_images_to_visualize = n_images_to_visualize
@@ -115,10 +119,11 @@ class Trainer:
             peak_value=self.lr,
             decay_steps=self.max_num_iterations,
             warmup_steps=self.warmup_steps,
+            end_value=self.lr_end_value,
         )
 
         optimizer = optax.chain(
-            optax.clip_by_global_norm(1.0),  # Clip gradients at norm 1
+            optax.clip_by_global_norm(self.grad_clip_norm),  # Clip gradients at norm 1
             optax.adamw(
                 self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
             ),
