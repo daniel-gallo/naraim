@@ -79,6 +79,12 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     )
     trainer_args.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     trainer_args.add_argument(
+        "--lr_end_value",
+        type=float,
+        default=0.0,
+        help="Learning rate at the end of cosine decay",
+    )
+    trainer_args.add_argument(
         "--beta2", type=float, default=0.98, help="Beta2 parameter for AdamW"
     )
     trainer_args.add_argument(
@@ -144,6 +150,10 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     trainer_args.add_argument("--profile", action="store_true")
 
     trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
+
+    trainer_args.add_argument(
+        "--grad_clip_norm", type=float, default=1.0, help="Gradient clipping norm"
+    )
 
 
 def parse_args():
