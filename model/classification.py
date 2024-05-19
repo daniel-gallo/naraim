@@ -19,10 +19,11 @@ class ClassificationHead(nn.Module):
         q = self.param(
             "probe_query",
             nn.initializers.lecun_normal(),
-            (batch_size, 1, embedding_dimension),
+            (1, 1, embedding_dimension),
         )
+        q_batched = jnp.tile(q, (batch_size, 1, 1))
         x = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, dtype=self.dtype)(
-            inputs_q=q, inputs_k=x, inputs_v=x
+            inputs_q=q_batched, inputs_k=x, inputs_v=x
         )
         x = x.squeeze()
         x = nn.Dense(self.num_categories, dtype=self.dtype)(x)
