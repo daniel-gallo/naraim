@@ -4,6 +4,7 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
@@ -37,6 +38,9 @@ class Trainer:
         warmup_steps,
         model_hparams,
         profile,
+        run_visualization,
+        randomize_visualized_images,
+        n_images_to_visualize,
     ):
         super().__init__()
         self.model_type = model_type
@@ -53,6 +57,9 @@ class Trainer:
         self.tensorboard_path = tensorboard_path
         self.checkpoints_path = Path(checkpoints_path).absolute()
         self.profile = profile
+        self.run_visualization = run_visualization
+        self.randomize_visualized_images = randomize_visualized_images
+        self.n_images_to_visualize = n_images_to_visualize
 
         # Get empty model based on model_type
         self.model = (
@@ -218,6 +225,10 @@ class Trainer:
 
         train_metrics = defaultdict(list)
 
+        if self.run_visualization:
+            self.visualize_pretraining_output(val_loader)
+            return
+
         if self.profile:
             jax.profiler.start_trace(self.tensorboard_path)
 
@@ -282,7 +293,9 @@ class Trainer:
                 self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
 
                 # Log the learning rate
-                self.logger.add_scalar("Learning rate", float(self.lr_schedule(idx)), idx)
+                self.logger.add_scalar(
+                    "Learning rate", float(self.lr_schedule(idx)), idx
+                )
 
                 # Flush the logger
                 self.logger.flush()
@@ -341,3 +354,66 @@ class Trainer:
                 step=int(restored["step"]),
                 opt_state=restored_opt_state,
             )
+
+    def visualize_pretraining_output(self, val_loader):
+        if self.randomize_visualized_images:
+            for _ in range(np.random.randint(0, 50)):
+                _ = next(val_loader)
+        patches, patch_indices, _, attention_matrices, _ = next(val_loader)
+        if self.randomize_visualized_images:
+            transposition_indices = np.random.permutation(patches.shape[0])
+            patches = patches[transposition_indices]
+            patch_indices = patch_indices[transposition_indices]
+            attention_matrices = attention_matrices[transposition_indices]
+
+        mean = jnp.mean(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+        var = jnp.var(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+        targets = (patches - mean) / (var + 1.0e-6) ** 0.5
+        preds = self.model.apply(
+            {"params": self.state.params},
+            patches,
+            patch_indices=patch_indices,
+            training=False,
+            mask=attention_matrices,
+            rngs=None,
+        )
+
+        for i in range(self.n_images_to_visualize):
+            max_row = patch_indices[0][:, 0].max()
+            max_col = patch_indices[0][:, 1].max()
+
+            tgt = np.zeros(((max_row + 1) * 14, (max_col + 1) * 14, 3))
+            pred = np.zeros(((max_row + 1) * 14, (max_col + 1) * 14, 3))
+
+            for idx, (row, col) in enumerate(patch_indices[0]):
+                if idx > 0 and row == 0 and col == 0:  # skip padded tokens
+                    break
+
+                tgt[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = targets[
+                    0
+                ][idx].reshape(14, 14, 3)
+                pred[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = preds[
+                    0
+                ][idx].reshape(14, 14, 3)
+
+            plt.imshow(tgt.astype(np.float32))
+            plt.savefig(f"./tgt{i}_before_unnorm.png")
+            plt.imshow(pred.astype(np.float32))
+            plt.savefig(f"./pred{i}_before_unnorm.png")
+
+            for idx, (row, col) in enumerate(patch_indices[0]):
+                if idx > 0 and row == 0 and col == 0:  # skip padded tokens
+                    break
+
+                # invert the normalization
+                tgt[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = (
+                    targets[0][idx].reshape(14, 14, 3) * (var[0][idx] + 1.0e-6) ** 0.5
+                ) + mean[0][idx]
+                pred[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = (
+                    preds[0][idx].reshape(14, 14, 3) * (var[0][idx] + 1.0e-6) ** 0.5
+                ) + mean[0][idx]
+
+            plt.imshow(tgt.astype(np.float32))
+            plt.savefig(f"./tgt{i}_after_unnorm.png")
+            plt.imshow(pred.astype(np.float32))
+            plt.savefig(f"./pred{i}_after_unnorm.png")
