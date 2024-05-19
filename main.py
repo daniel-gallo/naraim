@@ -185,15 +185,15 @@ if __name__ == "__main__":
     train_ds = prefetch(
         load_dataset(get_train_files(), args.patch_size, args.native_resolutions)
         .shuffle(4 * args.batch_size)
+        .repeat()
         .batch(args.batch_size)
         .prefetch(tf.data.AUTOTUNE)
-        .repeat()
         .as_numpy_iterator()
     )
 
     validation_ds = (
         load_dataset(get_val_files(), args.patch_size, args.native_resolutions)
-        .batch(args.batch_size)
+        .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
         .as_numpy_iterator()
     )
