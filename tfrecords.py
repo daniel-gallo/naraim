@@ -62,7 +62,6 @@ def parse_tfrecord_fn(example):
 
 def main():
     data_split = "train"
-
     assert data_split in ["train", "val"]
 
     tfrecords_dir = f"tfrecords_imagenet_shuffled_{data_split}"
@@ -70,18 +69,23 @@ def main():
 
     classes = set()
     datapoints = []
-    with open(
-        f"/scratch-nvme/ml-datasets/imagenet/LOC_{data_split}_solution.csv", "r"
-    ) as fopen:
-        for idx, line in enumerate(fopen.readlines()[1:]):  # skip header
-            imname = line.strip().split(",")[0]
-            cls = line.strip().split(",")[1].split()[0]
-            if data_split == "train":
-                path = f"{cls}/{imname}"
-            else:
+    if data_split == "val":
+        with open(
+            f"/scratch-nvme/ml-datasets/imagenet/LOC_{data_split}_solution.csv", "r"
+        ) as fopen:
+            for idx, line in enumerate(fopen.readlines()[1:]):  # skip header
+                imname = line.strip().split(",")[0]
+                cls = line.strip().split(",")[1].split()[0]
                 path = imname  # no class folder for validation set
-            datapoints.append((path, cls))
-            classes.add(cls)
+                datapoints.append((path, cls))
+                classes.add(cls)
+    else:
+        # LOC_train_solution.csv does not contain the class labels for every datapoint, so we need a different approach
+        for cls in os.listdir(images_dir):
+            for imname in os.listdir(os.path.join(images_dir, cls)):
+                path = f"{cls}/{imname.split('.')[0]}"
+                datapoints.append((path, cls))
+                classes.add(cls)
 
     classes = sorted(list(classes))
     class_mapping = {class_name: i for i, class_name in enumerate(classes)}
@@ -102,6 +106,10 @@ def main():
     if not os.path.exists(tfrecords_dir):
         os.makedirs(tfrecords_dir)  # creating TFRecords output folder
 
+    print(
+        f"\nWriting {len(annotations)} images to TFRecords, with {num_samples} images per .tfrec file this will be "
+        f"{num_tfrecords} total records files.\n"
+    )
     for tfrec_num in tqdm(range(num_tfrecords)):
         samples = annotations[
             (tfrec_num * num_samples) : ((tfrec_num + 1) * num_samples)

@@ -218,12 +218,8 @@ class Trainer:
     def train_model(self, train_loader, val_loader, max_num_iterations):
         # Track best eval metric
         best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
-        hparams_dict = {"learning_rate": self.lr, "seed": self.seed}
 
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
-        best_metrics = {
-            f"Best_{metric_to_eval}/val": None,
-        }
 
         train_metrics = defaultdict(list)
 
@@ -284,18 +280,14 @@ class Trainer:
                 if eval_metric >= best_eval:
                     best_eval = eval_metric
 
-                    best_metrics[f"Best_{metric_to_eval}/val"] = (
-                        -eval_metric if metric_to_eval == "mse" else eval_metric
-                    )
-
                 if metric_to_eval == "mse":
                     eval_metric = -eval_metric
 
                 # Log the metric
                 self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
 
-                hparams_dict["learning_rate"] = float(self.lr_schedule(idx))
-                self.logger.add_hparams(hparams_dict, best_metrics)
+                # Log the learning rate
+                self.logger.add_scalar("Learning rate", float(self.lr_schedule(idx)), idx)
 
                 # Flush the logger
                 self.logger.flush()
