@@ -138,8 +138,8 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
 
     trainer_args.add_argument(
         "--norm_pix_loss",
-        type=bool,
-        default=True,
+        type=str,
+        default="True",
         help="Whether to use a normalized-pixel loss",
     )
 
@@ -197,6 +197,14 @@ if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
     print(f"Training with native resolutions: {args.native_resolutions}")
+    
+    if args.norm_pix_loss == "False":
+        args.norm_pix_loss = False
+    else:
+        args.norm_pix_loss = True
+        
+    print(f"Using normalized pixel-loss: {args.norm_pix_loss}")
+
 
     train_ds = prefetch(
         load_dataset(get_train_files(), args.patch_size, args.native_resolutions)
