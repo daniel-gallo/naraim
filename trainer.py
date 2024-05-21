@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
+from einops import rearrange
 from flax.training import train_state
 from jax import random
 from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
@@ -40,8 +41,6 @@ class Trainer:
         profile,
         grad_clip_norm,
         lr_end_value,
-        run_visualization,
-        randomize_visualized_images,
         n_images_to_visualize,
     ):
         super().__init__()
@@ -61,8 +60,6 @@ class Trainer:
         self.profile = profile
         self.lr_end_value = lr_end_value
         self.grad_clip_norm = grad_clip_norm
-        self.run_visualization = run_visualization
-        self.randomize_visualized_images = randomize_visualized_images
         self.n_images_to_visualize = n_images_to_visualize
 
         # Get empty model based on model_type
@@ -230,10 +227,6 @@ class Trainer:
 
         train_metrics = defaultdict(list)
 
-        if self.run_visualization:
-            self.visualize_pretraining_output(val_loader)
-            return
-
         if self.profile:
             jax.profiler.start_trace(self.tensorboard_path)
 
@@ -315,7 +308,23 @@ class Trainer:
         # Test model on all images of a data loader and return avg mse or acc
         total_val, count = 0.0, 0
 
-        for batch in tqdm(data_loader, desc="Validation", leave=False):
+        batches_to_skip = np.random.randint(1, 50)
+
+        for idx, batch in enumerate(tqdm(data_loader, desc="Validation", leave=False)):
+            # Always plot the same few images for easy comparison across training stages
+            if idx == 0:
+                patches, patch_indices, _, attention_matrices, _ = batch
+                self.visualize_pretraining_output(
+                    patches, patch_indices, attention_matrices, plot_random_images=False
+                )
+
+            # Also plot a few random images for a more representative sample
+            if idx == batches_to_skip:
+                patches, patch_indices, _, attention_matrices, _ = batch
+                self.visualize_pretraining_output(
+                    patches, patch_indices, attention_matrices, plot_random_images=True
+                )
+
             val = self.eval_step(self.state, batch)
             total_val += val * batch[0].shape[0]
             count += batch[0].shape[0]
@@ -360,12 +369,10 @@ class Trainer:
                 opt_state=restored_opt_state,
             )
 
-    def visualize_pretraining_output(self, val_loader):
-        if self.randomize_visualized_images:
-            for _ in range(np.random.randint(0, 50)):
-                _ = next(val_loader)
-        patches, patch_indices, _, attention_matrices, _ = next(val_loader)
-        if self.randomize_visualized_images:
+    def visualize_pretraining_output(
+        self, patches, patch_indices, attention_matrices, plot_random_images
+    ):
+        if plot_random_images:
             transposition_indices = np.random.permutation(patches.shape[0])
             patches = patches[transposition_indices]
             patch_indices = patch_indices[transposition_indices]
@@ -384,41 +391,55 @@ class Trainer:
         )
 
         for i in range(self.n_images_to_visualize):
-            max_row = patch_indices[0][:, 0].max()
-            max_col = patch_indices[0][:, 1].max()
+            max_row = patch_indices[i][:, 0].max()
+            max_col = patch_indices[i][:, 1].max()
+            tgt_norm = np.zeros((3, (max_row + 1) * 14, (max_col + 1) * 14))
+            pred_norm = np.zeros((3, (max_row + 1) * 14, (max_col + 1) * 14))
+            tgt_unnorm = np.zeros((3, (max_row + 1) * 14, (max_col + 1) * 14))
+            pred_unnorm = np.zeros((3, (max_row + 1) * 14, (max_col + 1) * 14))
 
-            tgt = np.zeros(((max_row + 1) * 14, (max_col + 1) * 14, 3))
-            pred = np.zeros(((max_row + 1) * 14, (max_col + 1) * 14, 3))
-
-            for idx, (row, col) in enumerate(patch_indices[0]):
+            for idx, (row, col) in enumerate(patch_indices[i]):
                 if idx > 0 and row == 0 and col == 0:  # skip padded tokens
                     break
 
-                tgt[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = targets[
-                    0
-                ][idx].reshape(14, 14, 3)
-                pred[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = preds[
-                    0
-                ][idx].reshape(14, 14, 3)
+                tgt_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
+                    rearrange(targets[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
+                )
+                pred_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
+                    rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
+                )
 
-            plt.imshow(tgt.astype(np.float32))
-            plt.savefig(f"./tgt{i}_before_unnorm.png")
-            plt.imshow(pred.astype(np.float32))
-            plt.savefig(f"./pred{i}_before_unnorm.png")
-
-            for idx, (row, col) in enumerate(patch_indices[0]):
+            for idx, (row, col) in enumerate(patch_indices[i]):
                 if idx > 0 and row == 0 and col == 0:  # skip padded tokens
                     break
 
                 # invert the normalization
-                tgt[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = (
-                    targets[0][idx].reshape(14, 14, 3) * (var[0][idx] + 1.0e-6) ** 0.5
-                ) + mean[0][idx]
-                pred[row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14, :] = (
-                    preds[0][idx].reshape(14, 14, 3) * (var[0][idx] + 1.0e-6) ** 0.5
-                ) + mean[0][idx]
+                tgt_unnorm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
+                    rearrange(targets[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
+                    * (var[i][idx] + 1.0e-6) ** 0.5
+                ) + mean[i][idx]
+                pred_unnorm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
+                    rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
+                    * (var[i][idx] + 1.0e-6) ** 0.5
+                ) + mean[i][idx]
 
-            plt.imshow(tgt.astype(np.float32))
-            plt.savefig(f"./tgt{i}_after_unnorm.png")
-            plt.imshow(pred.astype(np.float32))
-            plt.savefig(f"./pred{i}_after_unnorm.png")
+            # Tensorboard only accepts uint8 images
+            tgt_norm = (tgt_norm.clip(0, 1) * 255).astype(np.uint8)
+            tgt_unnorm = (tgt_unnorm.clip(0, 1) * 255).astype(np.uint8)
+            pred_norm = (pred_norm.clip(0, 1) * 255).astype(np.uint8)
+            pred_unnorm = (pred_unnorm.clip(0, 1) * 255).astype(np.uint8)
+
+            if plot_random_images:
+                self.logger.add_images(
+                    f"Random image {i+1}",
+                    np.array([tgt_norm, tgt_unnorm, pred_norm, pred_unnorm]),
+                    global_step=self.state.step,
+                )
+            else:
+                self.logger.add_images(
+                    f"Static image {i+1}",
+                    np.array([tgt_norm, tgt_unnorm, pred_norm, pred_unnorm]),
+                    global_step=self.state.step,
+                )
+
+        return

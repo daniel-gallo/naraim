@@ -158,17 +158,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     )
 
     trainer_args.add_argument(
-        "--run_visualization",
-        action="store_true",
-        help="Whether to plot some of the predicted patches",
-    )
-    trainer_args.add_argument(
-        "--randomize_visualized_images",
-        action="store_true",
-        help="Whether to pick random images to plot. Otherwise, the first n images of the validation dataset are plotted",
-    )
-    trainer_args.add_argument(
-        "--n_images_to_visualize", type=int, default=1, help="How many images to plot"
+        "--n_images_to_visualize", type=int, default=5, help="How many images to plot"
     )
 
 
