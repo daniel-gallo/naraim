@@ -5,15 +5,11 @@ from glob import glob
 
 import jax
 import tensorflow as tf
+import tensorflow_models as tfm
+from einops import rearrange
 from matplotlib import pyplot as plt
 
 AUTOTUNE = tf.data.AUTOTUNE
-
-
-def decode_image(image_data):
-    image = tf.image.decode_jpeg(image_data, channels=3)
-    image = tf.cast(image, tf.float32) / 255.0
-    return image
 
 
 def resize_and_crop_image(image, patch_size):
@@ -87,15 +83,26 @@ def get_loss_mask(prefix, seq_length, max_seq_length):
     return tf.concat([zeros_start, ones, zeros_end], axis=0)
 
 
-def augment_image(image, rng):
+def augment_image(image, rng, should_apply_auto_augment):
     seed = rng.make_seeds(1)[:, 0]
 
     image = tf.image.stateless_random_flip_left_right(image, seed)
+    if should_apply_auto_augment:
+        # The augmentations use tf.random.uniform internally
+        # seed = rng.make_seeds(1)[0, 0]
+        # tf.random.set_seed(seed)
+        auto_augment = tfm.vision.augment.AutoAugment(
+            policies=tfm.vision.augment.AutoAugment.policy_reduced_imagenet()
+        )
+
+        image = auto_augment.distort(image)
 
     return image
 
 
-def read_labeled_tfrecord(example, patch_size, rng, native_resolutions):
+def read_labeled_tfrecord(
+    example, patch_size, rng, native_resolutions, should_apply_auto_augment
+):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
         "path": tf.io.FixedLenFeature([], tf.string),
@@ -104,10 +111,11 @@ def read_labeled_tfrecord(example, patch_size, rng, native_resolutions):
     }
 
     example = tf.io.parse_single_example(example, feature)
-    image = decode_image(example["image"])
-    image = augment_image(image, rng)
+    image = tf.image.decode_jpeg(example["image"], channels=3)
+    image = augment_image(image, rng, should_apply_auto_augment)
+    image = tf.cast(image, tf.float32) / 255.0
 
-    if native_resolutions == True:
+    if native_resolutions:
         image = resize_and_crop_image(image, patch_size)
     else:
         image = tf.image.resize(image, [224, 224])
@@ -145,13 +153,15 @@ def pad_sequence(seq, seq_len):
     return seq, padding_mask
 
 
-def load_dataset(filenames, patch_size, native_resolutions):
+def load_dataset(filenames, patch_size, native_resolutions, should_apply_auto_augment):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
 
     # Create a random number generator for data augmentations
     rng = tf.random.Generator.from_seed(42, alg="philox")
     dataset = dataset.map(
-        lambda x: read_labeled_tfrecord(x, patch_size, rng, native_resolutions),
+        lambda x: read_labeled_tfrecord(
+            x, patch_size, rng, native_resolutions, should_apply_auto_augment
+        ),
         num_parallel_calls=AUTOTUNE,
     )
     return dataset
@@ -177,29 +187,33 @@ def prefetch(iterator):
 
 
 if __name__ == "__main__":
-    batch_size = 4
+    tf.random.set_seed(0)
+    batch_size = 1
     image_dir = "./tfrecords"
     train_files = glob(os.path.join(image_dir, "*.tfrec"))
-    train_dataset = load_dataset(train_files, 14, native_resolutions=False)
+    train_dataset = load_dataset(
+        train_files, 14, native_resolutions=True, should_apply_auto_augment=True
+    )
     train_ds = prefetch(
-        train_dataset.shuffle(10 * batch_size)
+        train_dataset.shuffle(10 * batch_size, seed=1)
         .batch(batch_size)
         .prefetch(tf.data.AUTOTUNE)
         .repeat()
         .as_numpy_iterator()
     )
 
-    h = train_ds.save()
-
     for batch in train_ds:
-        image, image_coords, label, attention_matrix, loss_mask = batch
-        print(image.shape)
-        print(image_coords.shape)
-        print(label.shape)
-        print(attention_matrix.shape)
-        print(loss_mask.shape)
-
-        plt.imshow(
-            loss_mask
-        )  # we should have only one padding at the end for non-native resolutions
+        patches, patch_indices, label, attention_matrix, loss_mask = batch
+        h, w = 1 + patch_indices[0].max(axis=0)
+        print(h, w)
+        image = rearrange(
+            patches[0][: h * w],
+            "(h w) (p1 p2 c) -> (h p1) (w p2) c",
+            h=h,
+            w=w,
+            p1=14,
+            p2=14,
+            c=3,
+        )
+        plt.imshow(image)
         plt.show()

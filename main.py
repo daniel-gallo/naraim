@@ -11,7 +11,7 @@ def _get_files(split: str):
     snellius_path = Path(
         f"/scratch-shared/fomo_imagenet/tfrecords_imagenet_shuffled_{split}"
     )
-    local_path = Path(f"./tfrecords_imagenet_shuffled_{split}")
+    local_path = Path("./tfrecords")
 
     for path in (snellius_path, local_path):
         if path.exists():
@@ -177,6 +177,11 @@ def parse_args():
         action="store_true",
         help="Whether we use the native resolutions of the images",
     )
+    parser.add_argument(
+        "--should_apply_auto_augment",
+        action="store_true",
+        help="Whether we should apply AutoAugment",
+    )
 
     args = parser.parse_args()
 
@@ -197,17 +202,21 @@ if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
     print(f"Training with native resolutions: {args.native_resolutions}")
-    
+
     if args.norm_pix_loss == "False":
         args.norm_pix_loss = False
     else:
         args.norm_pix_loss = True
-        
+
     print(f"Using normalized pixel-loss: {args.norm_pix_loss}")
 
-
     train_ds = prefetch(
-        load_dataset(get_train_files(), args.patch_size, args.native_resolutions)
+        load_dataset(
+            get_train_files(),
+            args.patch_size,
+            args.native_resolutions,
+            args.should_apply_auto_augment,
+        )
         .shuffle(4 * args.batch_size)
         .repeat()
         .batch(args.batch_size)
@@ -216,7 +225,12 @@ if __name__ == "__main__":
     )
 
     validation_ds = (
-        load_dataset(get_val_files(), args.patch_size, args.native_resolutions)
+        load_dataset(
+            get_val_files(),
+            args.patch_size,
+            args.native_resolutions,
+            args.should_apply_auto_augment,
+        )
         .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
         .as_numpy_iterator()
