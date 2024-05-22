@@ -137,6 +137,13 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     )
 
     trainer_args.add_argument(
+        "--freeze_backbone",
+        action="store_true",
+        default=False,
+        help="Freeze the backbone (InitialProjection and Transformer)",
+    )
+
+    trainer_args.add_argument(
         "--norm_pix_loss",
         type=str,
         default="True",

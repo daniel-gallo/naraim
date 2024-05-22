@@ -9,6 +9,7 @@ import numpy as np
 import optax
 import orbax.checkpoint as ocp
 from einops import rearrange
+from flax import traverse_util
 from flax.training import train_state
 from jax import random
 from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
@@ -34,6 +35,7 @@ class Trainer:
         tensorboard_path,
         checkpoint_path_to_load,
         load_only_params,
+        freeze_backbone,
         norm_pix_loss,
         max_num_iterations,
         warmup_steps,
@@ -74,7 +76,9 @@ class Trainer:
         self.init_logger()
         self.init_optimizer()
         if checkpoint_path_to_load:
-            self.load_checkpoint(checkpoint_path_to_load, model_type, load_only_params)
+            self.load_checkpoint(
+                checkpoint_path_to_load, model_type, load_only_params, freeze_backbone
+            )
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
@@ -119,7 +123,7 @@ class Trainer:
             end_value=self.lr_end_value,
         )
 
-        optimizer = optax.chain(
+        self.optimizer = optax.chain(
             optax.clip_by_global_norm(self.grad_clip_norm),  # Clip gradients at norm 1
             optax.adamw(
                 self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
@@ -130,7 +134,7 @@ class Trainer:
         self.state = train_state.TrainState.create(
             apply_fn=self.model.apply,
             params=self.init_params,
-            tx=optimizer,
+            tx=self.optimizer,
         )
 
     def loss_classifier(self, params, rng, batch, train):
@@ -311,19 +315,26 @@ class Trainer:
         batches_to_skip = np.random.randint(1, 50)
 
         for idx, batch in enumerate(tqdm(data_loader, desc="Validation", leave=False)):
-            # Always plot the same few images for easy comparison across training stages
-            if idx == 0:
-                patches, patch_indices, _, attention_matrices, _ = batch
-                self.visualize_pretraining_output(
-                    patches, patch_indices, attention_matrices, plot_random_images=False
-                )
+            if self.model_type == "autoregressor":
+                # Always plot the same few images for easy comparison across training stages
+                if idx == 0:
+                    patches, patch_indices, _, attention_matrices, _ = batch
+                    self.visualize_pretraining_output(
+                        patches,
+                        patch_indices,
+                        attention_matrices,
+                        plot_random_images=False,
+                    )
 
-            # Also plot a few random images for a more representative sample
-            if idx == batches_to_skip:
-                patches, patch_indices, _, attention_matrices, _ = batch
-                self.visualize_pretraining_output(
-                    patches, patch_indices, attention_matrices, plot_random_images=True
-                )
+                # Also plot a few random images for a more representative sample
+                if idx == batches_to_skip:
+                    patches, patch_indices, _, attention_matrices, _ = batch
+                    self.visualize_pretraining_output(
+                        patches,
+                        patch_indices,
+                        attention_matrices,
+                        plot_random_images=True,
+                    )
 
             val = self.eval_step(self.state, batch)
             total_val += val * batch[0].shape[0]
@@ -338,13 +349,18 @@ class Trainer:
         checkpointer.save(self.checkpoints_path / f"step_{step}", self.state)
 
     def load_checkpoint(
-        self, checkpoint_path_to_load, model_type, load_only_params=False
+        self,
+        checkpoint_path_to_load,
+        model_type,
+        load_only_params=False,
+        freeze_backbone=False,
     ):
         # Restore the lastest checkpoint (the best saved model)
         checkpointer = ocp.PyTreeCheckpointer()
         restored = checkpointer.restore(Path(checkpoint_path_to_load).absolute())
 
         if load_only_params:
+            print("Loading only parameters")
             assert model_type == "classifier"
 
             if "PretrainingHead_0" in restored["params"]:
@@ -353,11 +369,33 @@ class Trainer:
                     "ClassificationHead_0"
                 ]
 
-            self.state = self.state.replace(
-                params=restored["params"],
-            )
+            if freeze_backbone:
+                print("Freezing the backbone")
 
+                partition_optimizers = {
+                    "trainable": self.optimizer,
+                    "frozen": optax.set_to_zero(),
+                }
+
+                param_partitions = traverse_util.path_aware_map(
+                    lambda path, _: "frozen"
+                    if "ClassificationHead_0" not in path
+                    else "trainable",
+                    restored["params"],
+                )
+                tx = optax.multi_transform(partition_optimizers, param_partitions)
+
+                self.state = train_state.TrainState.create(
+                    apply_fn=self.model.apply,
+                    params=restored["params"],
+                    tx=tx,
+                )
+            else:
+                self.state = self.state.replace(
+                    params=restored["params"],
+                )
         else:
+            print("Loading full train state")
             restored_opt_state = jax.tree_unflatten(
                 jax.tree_structure(self.state.opt_state),
                 jax.tree_leaves(restored["opt_state"]),
