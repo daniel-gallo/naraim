@@ -28,9 +28,11 @@ last_checkpoint=$(ls /scratch-shared/fomo_logs/$previous_job_id/checkpoints/ | s
 last_checkpoint_path=/scratch-shared/fomo_logs/$previous_job_id/checkpoints/$last_checkpoint
 echo "Resuming from $last_checkpoint_path"
 
-python main.py \
+XLA_PYTHON_CLIENT_MEM_FRACTION=.90 python main.py \
     --max_num_iterations 500000 \
     --checkpoints_path "$checkpoints_path" \
     --tensorboard_path "$tensorboard_path" \
+    --use_fractional_positional_encoding \
     --native_resolutions \
-    --checkpoint_path_to_load "$last_checkpoint_path"
+    --checkpoint_path_to_load "$last_checkpoint_path" \
+    --dropout_probability 0.1

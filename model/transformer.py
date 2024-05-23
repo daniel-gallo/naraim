@@ -111,7 +111,7 @@ class Transformer(nn.Module):
     @nn.compact
     def __call__(self, x, training: bool, mask=None):
         for _ in range(self.num_layers):
-            layer = TransformerLayer(
+            layer = nn.remat(TransformerLayer, static_argnums=(2,))(
                 dtype=self.dtype,
                 num_heads=self.num_heads,
                 embedding_dimension=self.embedding_dimension,
