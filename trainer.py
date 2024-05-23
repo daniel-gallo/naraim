@@ -359,6 +359,12 @@ class Trainer:
         checkpointer = ocp.PyTreeCheckpointer()
         restored = checkpointer.restore(Path(checkpoint_path_to_load).absolute())
 
+        # The name of the parameters might change if we change the remat position!
+        restored["params"] = jax.tree_unflatten(
+            jax.tree_structure(self.state.params),
+            jax.tree_leaves(restored["params"]),
+        )
+
         if load_only_params:
             print("Loading only parameters")
             assert model_type == "classifier"
