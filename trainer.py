@@ -4,7 +4,6 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
@@ -18,6 +17,26 @@ from tqdm import tqdm, trange
 
 from dataset import prefetch
 from model import ClassificationModel, PretrainingModel
+
+
+def translate(target, source):
+    """
+    If some remats are added / removed from the mode, the checkpoints will not be compatible.
+    We can solve this by adding / removing the "Checkpoint" prefix as needed.
+    """
+    normalized_to_target = {}
+    for target_path in traverse_util.flatten_dict(target):
+        normalized_path = tuple(key.replace("Checkpoint", "") for key in target_path)
+        normalized_to_target[normalized_path] = target_path
+
+    translated_params = {}
+    for source_path, value in traverse_util.flatten_dict(source).items():
+        normalized_path = tuple(key.replace("Checkpoint", "") for key in source_path)
+        d1_path = normalized_to_target[normalized_path]
+
+        translated_params[d1_path] = value
+
+    return traverse_util.unflatten_dict(translated_params)
 
 
 class Trainer:
@@ -359,6 +378,8 @@ class Trainer:
         checkpointer = ocp.PyTreeCheckpointer()
         restored = checkpointer.restore(Path(checkpoint_path_to_load).absolute())
 
+        restored["params"] = translate(self.state.params, restored["params"])
+
         if load_only_params:
             print("Loading only parameters")
             assert model_type == "classifier"
@@ -396,6 +417,17 @@ class Trainer:
                 )
         else:
             print("Loading full train state")
+
+            restored["opt_state"][1][0]["mu"] = translate(
+                self.state.opt_state[1][0].mu,
+                restored["opt_state"][1][0]["mu"],
+            )
+
+            restored["opt_state"][1][0]["nu"] = translate(
+                self.state.opt_state[1][0].nu,
+                restored["opt_state"][1][0]["nu"],
+            )
+
             restored_opt_state = jax.tree_unflatten(
                 jax.tree_structure(self.state.opt_state),
                 jax.tree_leaves(restored["opt_state"]),
