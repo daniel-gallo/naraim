@@ -7,6 +7,7 @@ import jax
 import tensorflow as tf
 import tensorflow_models as tfm
 from einops import rearrange
+from flax.jax_utils import prefetch_to_device
 from matplotlib import pyplot as plt
 
 AUTOTUNE = tf.data.AUTOTUNE

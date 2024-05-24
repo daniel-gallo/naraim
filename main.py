@@ -1,17 +1,39 @@
 import argparse
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import tensorflow as tf
 
 from dataset import load_dataset, prefetch
-from trainer import Trainer
+from trainer_DP import Trainer
+
+
+def simulate_CPU_devices(device_count: int = 4):
+    # Set XLA flags to simulate a CPU with a given number of devices
+    flags = os.environ.get("XLA_FLAGS", "")
+    flags += f" --xla_force_host_platform_device_count={device_count}"
+    os.environ["XLA_FLAGS"] = flags
+    # Disable CUDA to force XLA to use the CPU
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    # Check for packages to be installed if needed. On Colab, the following packages are not installed by default:
+    # - ml_collections
+    try:
+        import ml_collections
+    except ImportError:
+        install_package("ml_collections")
+
+
+def install_package(package: str) -> None:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", package])
 
 
 def _get_files(split: str):
     snellius_path = Path(
         f"/scratch-shared/fomo_imagenet/tfrecords_imagenet_shuffled_{split}"
     )
-    local_path = Path("./tfrecords")
+    local_path = Path(f"./tfrecords_imagenet_shuffled_{split}")
 
     for path in (snellius_path, local_path):
         if path.exists():
@@ -206,6 +228,8 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    simulate_CPU_devices()
+
     args, model_hparams, trainer_kwargs = parse_args()
 
     print(f"Training with native resolutions: {args.native_resolutions}")
@@ -231,7 +255,7 @@ if __name__ == "__main__":
         .as_numpy_iterator()
     )
 
-    validation_ds = (
+    validation_ds = prefetch(
         load_dataset(
             get_val_files(),
             args.patch_size,
@@ -243,8 +267,32 @@ if __name__ == "__main__":
         .as_numpy_iterator()
     )
 
-    args.dummy_batch = next(iter(train_ds))
+    # train_ds2 = (load_dataset(
+    #         get_train_files(),
+    #         args.patch_size,
+    #         args.native_resolutions,
+    #         args.should_apply_auto_augment,
+    #     )
+    #     .shuffle(4 * args.batch_size)
+    #     .repeat()
+    #     .batch(args.batch_size)
+    #     .prefetch(tf.data.AUTOTUNE)
+    #     .as_numpy_iterator()
+    #     )
+    #
+    # validation_ds2 = (
+    #     load_dataset(
+    #         get_val_files(),
+    #         args.patch_size,
+    #         args.native_resolutions,
+    #         args.should_apply_auto_augment,
+    #     )
+    #     .batch(args.batch_size, drop_remainder=True)
+    #     .prefetch(tf.data.AUTOTUNE)
+    #     .as_numpy_iterator()
+    # )
 
+    args.dummy_batch = next(iter(train_ds))
     trainer_kwargs["dummy_batch"] = next(iter(train_ds))
     trainer = Trainer(model_hparams=model_hparams, **trainer_kwargs)
     trainer.train_model(train_ds, validation_ds, args.max_num_iterations)
