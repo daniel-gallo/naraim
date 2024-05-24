@@ -378,8 +378,6 @@ class Trainer:
         checkpointer = ocp.PyTreeCheckpointer()
         restored = checkpointer.restore(Path(checkpoint_path_to_load).absolute())
 
-        restored["params"] = translate(self.state.params, restored["params"])
-
         if load_only_params:
             print("Loading only parameters")
             assert model_type == "classifier"
@@ -389,6 +387,8 @@ class Trainer:
                 restored["params"]["ClassificationHead_0"] = self.state.params[
                     "ClassificationHead_0"
                 ]
+
+            restored["params"] = translate(self.state.params, restored["params"])
 
             if freeze_backbone:
                 print("Freezing the backbone")
@@ -417,6 +417,7 @@ class Trainer:
                 )
         else:
             print("Loading full train state")
+            restored["params"] = translate(self.state.params, restored["params"])
 
             restored["opt_state"][1][0]["mu"] = translate(
                 self.state.opt_state[1][0].mu,
