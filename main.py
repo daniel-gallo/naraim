@@ -76,7 +76,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         "--model_type",
         type=str,
         default="autoregressor",
-        choices=["classifier", "autoregressor"],
+        choices=["classifier", "autoregressor", "no_transformer_classifier"],
         help="What to train",
     )
     trainer_args.add_argument("--lr", type=float, default=1e-3, help="Learning rate")

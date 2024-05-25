@@ -71,3 +71,30 @@ class ClassificationModel(nn.Module):
         )(x)
 
         return x
+
+
+class NoTransformerClassificationModel(nn.Module):
+    dtype: jnp.dtype
+    patch_size: int
+    max_num_patches: int
+    num_channels: int
+    num_categories: int
+    num_layers: int
+    num_heads: int
+    embedding_dimension: int
+    hidden_dimension: int
+    dropout_probability: float
+    use_fractional_positional_encoding: bool = False
+
+    @nn.compact
+    def __call__(self, x, patch_indices, training: bool):
+        x = InitialProjection(
+            dtype=self.dtype, embedding_dimension=self.embedding_dimension
+        )(x)
+        x = ClassificationHead(
+            dtype=self.dtype,
+            num_heads=self.num_heads,
+            num_categories=self.num_categories,
+        )(x)
+
+        return x

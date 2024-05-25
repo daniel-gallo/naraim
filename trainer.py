@@ -17,6 +17,7 @@ from tqdm import tqdm, trange
 
 from dataset import prefetch
 from model import ClassificationModel, PretrainingModel
+from model.classification import NoTransformerClassificationModel
 
 
 def translate(target, source):
@@ -84,11 +85,13 @@ class Trainer:
         self.n_images_to_visualize = n_images_to_visualize
 
         # Get empty model based on model_type
-        self.model = (
-            PretrainingModel(**model_hparams)
-            if model_type == "autoregressor"
-            else ClassificationModel(**model_hparams)
-        )
+        if model_type == "autoregressor":
+            self.model = PretrainingModel(**model_hparams)
+        elif model_type == "no_transformer_classifier":
+            print("Look mom, no transformer!")
+            self.model = NoTransformerClassificationModel(**model_hparams)
+        else:
+            self.model = ClassificationModel(**model_hparams)
 
         # Initialize model, logger and optimizer
         self.init_model(dummy_batch, model_type)
@@ -223,7 +226,7 @@ class Trainer:
         state = state.apply_gradients(grads=grads)
 
         # Flatten the tuple
-        if self.model_type == "classifier":
+        if "classifier" in self.model_type:
             output = [output]  # [(loss, (rng, acc))]
             output = [
                 (loss, *aux_output) for loss, aux_output in output
