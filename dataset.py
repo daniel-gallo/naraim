@@ -101,7 +101,12 @@ def augment_image(image, rng, should_apply_auto_augment):
 
 
 def read_labeled_tfrecord(
-    example, patch_size, rng, native_resolutions, should_apply_auto_augment
+    example,
+    patch_size,
+    rng,
+    native_resolutions,
+    should_apply_auto_augment,
+    apply_augmentations=True,
 ):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
@@ -112,7 +117,8 @@ def read_labeled_tfrecord(
 
     example = tf.io.parse_single_example(example, feature)
     image = tf.image.decode_jpeg(example["image"], channels=3)
-    image = augment_image(image, rng, should_apply_auto_augment)
+    if apply_augmentations:
+        image = augment_image(image, rng, should_apply_auto_augment)
     image = tf.cast(image, tf.float32) / 255.0
 
     if native_resolutions:
@@ -153,14 +159,25 @@ def pad_sequence(seq, seq_len):
     return seq, padding_mask
 
 
-def load_dataset(filenames, patch_size, native_resolutions, should_apply_auto_augment):
+def load_dataset(
+    filenames,
+    patch_size,
+    native_resolutions,
+    should_apply_auto_augment,
+    apply_augmentations=True,
+):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
 
     # Create a random number generator for data augmentations
     rng = tf.random.Generator.from_seed(42, alg="philox")
     dataset = dataset.map(
         lambda x: read_labeled_tfrecord(
-            x, patch_size, rng, native_resolutions, should_apply_auto_augment
+            x,
+            patch_size,
+            rng,
+            native_resolutions,
+            should_apply_auto_augment,
+            apply_augmentations=apply_augmentations,
         ),
         num_parallel_calls=AUTOTUNE,
     )
