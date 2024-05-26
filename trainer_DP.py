@@ -1,6 +1,7 @@
 import functools
 from collections import defaultdict
 from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 
 import flax.linen as nn
@@ -41,7 +42,7 @@ def fold_rng_over_axis(rng: jax.random.PRNGKey, axis_name: str) -> jax.random.PR
     return jax.random.fold_in(rng, axis_index)
 
 
-def init_dp(
+def init_model(
     rng: jax.random.PRNGKey, exmp_batch: jax.Array, model: nn.Module, optimizer
 ) -> (train_state.TrainState, jax.random.PRNGKey):
     image, image_coords, label, attention_matrix, loss_mask = exmp_batch
@@ -58,20 +59,6 @@ def init_dp(
         tx=optimizer,
     )
     return state, rng
-
-
-def init_dp_fn(
-    rng: jax.random.PRNGKey, exmp_batch: jax.Array, model: nn.Module, optimizer, mesh
-) -> (train_state.TrainState, jax.random.PRNGKey):
-    return jax.jit(
-        shard_map(
-            functools.partial(init_dp, model=model, optimizer=optimizer),
-            mesh,
-            in_specs=(P(), P("data")),
-            out_specs=P(),
-            check_rep=False,
-        ),
-    )(rng, exmp_batch)
 
 
 def loss_classifier(params, apply_fn, batch, dropout_rng, train):
@@ -92,81 +79,70 @@ def loss_classifier(params, apply_fn, batch, dropout_rng, train):
     return loss, step_metrics
 
 
-def loss_autoregressor(params, apply_fn, batch, dropout_rng, train, norm_pix_loss):
-    patches, patch_indices, labels, attention_matrices, loss_masks = batch
+@partial(jax.jit, static_argnames=["apply_fn", "mesh", "norm_pix_loss", "train"])
+def loss_autoregressor_dp(
+    params, batch, apply_fn, mesh, norm_pix_loss, train, dropout_rng
+):
+    @partial(shard_map, mesh=mesh, in_specs=P("data"), out_specs=P())
+    def loss_autoregressor_spmd(local_batch):
+        patches, patch_indices, labels, attention_matrices, loss_masks = local_batch
+        if norm_pix_loss:
+            mean = jnp.mean(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+            var = jnp.var(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+            targets = (patches - mean) / (var + 1.0e-6) ** 0.5
+        else:
+            targets = patches
 
-    # Normalize the target
-    if norm_pix_loss:
-        mean = jnp.mean(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
-        var = jnp.var(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
-        targets = (patches - mean) / (var + 1.0e-6) ** 0.5
-    else:
-        targets = patches
+        if train:
+            rngs = {"dropout": dropout_rng}
+        else:
+            rngs = None
 
-    # Apply rng only for training
-    if train:
-        rngs = {"dropout": dropout_rng}
-    else:
-        rngs = None
-
-    preds = apply_fn(
-        {"params": params},
-        patches,
-        patch_indices=patch_indices,
-        training=train,
-        mask=attention_matrices,
-        rngs=rngs,
-    )
-
-    # We predict the next patch, so we need to slice the tensors
-    loss = (
-        preds[:, :-1, :] - targets[:, 1:, :]
-    ) ** 2  # shape = [bs, max_num_paches - 1, patch_size ** 2 * num_channels]
-
-    # Apply mask on the loss so that gradients are computed
-    # for the patches that are between the prefixed and padding patches
-    loss = loss * loss_masks[:, :-1, None]
-    loss = jnp.mean(loss)
-
-    batch_size = batch[0].shape[0]
-    step_metrics = {"mse": (loss, batch_size)}
-    return loss, step_metrics
-
-
-def train_step_dp(state: train_state.TrainState, metrics, batch, loss_fn, rng):
-    rng, step_rng = jax.random.split(rng)
-    dropout_rng = fold_rng_over_axis(step_rng, "data")
-    (loss, step_metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-        state.params, state.apply_fn, batch, dropout_rng, True
-    )
-    # Update parameters. We need to sync the gradients across devices before updating.
-    with jax.named_scope("sync_gradients"):
-        grads = jax.tree_map(lambda g: jax.lax.pmean(g, axis_name="data"), grads)
-    new_state = state.apply_gradients(grads=grads)
-    # Sum metrics across replicas. Alternatively, we could keep the metrics separate
-    # and only synchronize them before logging. For simplicity, we sum them here.
-    with jax.named_scope("sync_metrics"):
-        step_metrics = jax.tree_map(
-            lambda x: jax.lax.psum(x, axis_name="data"), step_metrics
+        preds = apply_fn(
+            {"params": params},
+            patches,
+            patch_indices=patch_indices,
+            training=train,
+            mask=attention_matrices,
+            rngs=rngs,
         )
-    if metrics is None:
-        metrics = step_metrics
-    else:
-        metrics = jax.tree_map(jnp.add, metrics, step_metrics)
-    return new_state, rng, metrics
+
+        # We predict the next patch, so we need to slice the tensors
+        local_loss = (
+            preds[:, :-1, :] - targets[:, 1:, :]
+        ) ** 2  # shape = [bs, max_num_paches - 1, patch_size ** 2 * num_channels]
+
+        # Apply mask on the loss so that gradients are computed
+        # for the patches that are between the prefixed and padding patches
+        local_loss = local_loss * loss_masks[:, :-1, None]
+        local_loss = jnp.mean(local_loss)
+
+        # batch_size = batch[0].shape[0]
+        # step_metrics = {"mse": (loss, batch_size)}
+        return jax.lax.pmean(local_loss, "data")
+
+    return loss_autoregressor_spmd(batch)
 
 
-def train_step_dp_fn(state, metrics, batch, loss_fn, rng, mesh):
-    return jax.jit(
-        shard_map(
-            functools.partial(train_step_dp, loss_fn=loss_fn, rng=rng),
-            mesh,
-            in_specs=(P(), P(), P("data")),
-            out_specs=(P(), P(), P()),
-            check_rep=False,
-        ),
-        donate_argnames=("state", "metrics"),
-    )(state, metrics, batch)
+@partial(
+    jax.jit, static_argnames=["apply_fn", "mesh", "norm_pix_loss", "train", "loss_fn"]
+)
+def train_step(
+    state: train_state.TrainState,
+    batch,
+    apply_fn,
+    mesh,
+    norm_pix_loss,
+    train,
+    rng,
+    loss_fn,
+):
+    rng, step_rng = jax.random.split(rng)
+    loss, grads = jax.value_and_grad(loss_fn)(
+        state.params, batch, apply_fn, mesh, norm_pix_loss, train, step_rng
+    )
+    new_state = state.apply_gradients(grads=grads)
+    return new_state, rng
 
 
 class Trainer:
@@ -225,8 +201,8 @@ class Trainer:
 
         # Initialize model, logger and optimizer
         self.init_optimizer()
-        self.state, self.rng = init_dp_fn(
-            self.rng, dummy_batch, self.model, self.optimizer, self.mesh
+        self.state, self.rng = init_model(
+            self.rng, dummy_batch, self.model, self.optimizer
         )
         self.init_logger()
         if checkpoint_path_to_load:
@@ -234,16 +210,13 @@ class Trainer:
                 checkpoint_path_to_load, model_type, load_only_params, freeze_backbone
             )
 
-        # Jitting train and eval steps
-        # self.train_step = jax.jit(self.train_step)
-        # self.eval_step = jax.jit(self.eval_step)
-
         # Loss function
-        self.get_loss = (
-            functools.partial(loss_autoregressor, norm_pix_loss=self.norm_pix_loss)
-            if model_type == "autoregressor"
-            else loss_classifier
-        )
+        # self.get_loss = (
+        #     functools.partial(loss_autoregressor, norm_pix_loss=self.norm_pix_loss)
+        #     if model_type == "autoregressor"
+        #     else loss_classifier
+        # )
+        self.get_loss = loss_autoregressor_dp
 
         # Metrics keys (for logging)
         self.metrics_keys = (
@@ -313,10 +286,17 @@ class Trainer:
                 # aux_output:
                 # - (loss, rng) for autoregressor
                 # - (loss, rng, acc) for classification
-                self.state, self.rng, train_metrics = train_step_dp_fn(
-                    self.state, train_metrics, batch, self.get_loss, self.rng, self.mesh
+                self.state, self.rng = train_step(
+                    self.state,
+                    batch,
+                    self.state.apply_fn,
+                    self.mesh,
+                    self.norm_pix_loss,
+                    True,
+                    self.rng,
+                    self.get_loss,
                 )
-
+            # print(jax.device_get(train_metrics['mse']).mean())
             # Logging
             if idx > first_step and (idx + 1) % self.log_every_n_steps == 0:
                 for key in self.metrics_keys:

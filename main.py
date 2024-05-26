@@ -19,14 +19,12 @@ def simulate_CPU_devices(device_count: int = 4):
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     # Check for packages to be installed if needed. On Colab, the following packages are not installed by default:
     # - ml_collections
-    try:
-        import ml_collections
-    except ImportError:
-        install_package("ml_collections")
 
 
-def install_package(package: str) -> None:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", package])
+#
+#
+# def install_package(package: str) -> None:
+#     subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", package])
 
 
 def _get_files(split: str):
@@ -266,31 +264,6 @@ if __name__ == "__main__":
         .prefetch(tf.data.AUTOTUNE)
         .as_numpy_iterator()
     )
-
-    # train_ds2 = (load_dataset(
-    #         get_train_files(),
-    #         args.patch_size,
-    #         args.native_resolutions,
-    #         args.should_apply_auto_augment,
-    #     )
-    #     .shuffle(4 * args.batch_size)
-    #     .repeat()
-    #     .batch(args.batch_size)
-    #     .prefetch(tf.data.AUTOTUNE)
-    #     .as_numpy_iterator()
-    #     )
-    #
-    # validation_ds2 = (
-    #     load_dataset(
-    #         get_val_files(),
-    #         args.patch_size,
-    #         args.native_resolutions,
-    #         args.should_apply_auto_augment,
-    #     )
-    #     .batch(args.batch_size, drop_remainder=True)
-    #     .prefetch(tf.data.AUTOTUNE)
-    #     .as_numpy_iterator()
-    # )
 
     args.dummy_batch = next(iter(train_ds))
     trainer_kwargs["dummy_batch"] = next(iter(train_ds))
