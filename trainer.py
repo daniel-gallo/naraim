@@ -4,6 +4,7 @@ from pathlib import Path
 
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
@@ -463,6 +464,10 @@ class Trainer:
             mask=attention_matrices,
             rngs=None,
         )
+        # Prepend a black patch to the predictions to make the visualization line up
+        preds = jnp.concatenate(
+            (jnp.zeros((preds.shape[0], 1, preds.shape[2])), preds), axis=1
+        )
 
         for i in range(self.n_images_to_visualize):
             max_row = patch_indices[i][:, 0].max()
@@ -482,6 +487,11 @@ class Trainer:
                 pred_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
                     rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
                 )
+
+            plt.imshow(tgt_norm.transpose(1, 2, 0))
+            plt.savefig(f"target_{i}.png")
+            plt.imshow(pred_norm.transpose(1, 2, 0))
+            plt.savefig(f"pred_{i}.png")
 
             for idx, (row, col) in enumerate(patch_indices[i]):
                 if idx > 0 and row == 0 and col == 0:  # skip padded tokens
