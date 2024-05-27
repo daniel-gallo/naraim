@@ -237,7 +237,7 @@ if __name__ == "__main__":
             args.patch_size,
             args.native_resolutions,
             args.should_apply_auto_augment,
-            args.model_type == "autoregressor",
+            False,
         )
         .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
