@@ -18,6 +18,27 @@ from tqdm import tqdm, trange
 
 from dataset import prefetch
 from model import ClassificationModel, PretrainingModel
+from model.classification import NoTransformerClassificationModel
+
+
+def translate(target, source):
+    """
+    If some remats are added / removed from the mode, the checkpoints will not be compatible.
+    We can solve this by adding / removing the "Checkpoint" prefix as needed.
+    """
+    normalized_to_target = {}
+    for target_path in traverse_util.flatten_dict(target):
+        normalized_path = tuple(key.replace("Checkpoint", "") for key in target_path)
+        normalized_to_target[normalized_path] = target_path
+
+    translated_params = {}
+    for source_path, value in traverse_util.flatten_dict(source).items():
+        normalized_path = tuple(key.replace("Checkpoint", "") for key in source_path)
+        d1_path = normalized_to_target[normalized_path]
+
+        translated_params[d1_path] = value
+
+    return traverse_util.unflatten_dict(translated_params)
 
 
 class Trainer:
@@ -65,11 +86,13 @@ class Trainer:
         self.n_images_to_visualize = n_images_to_visualize
 
         # Get empty model based on model_type
-        self.model = (
-            PretrainingModel(**model_hparams)
-            if model_type == "autoregressor"
-            else ClassificationModel(**model_hparams)
-        )
+        if model_type == "autoregressor":
+            self.model = PretrainingModel(**model_hparams)
+        elif model_type == "no_transformer_classifier":
+            print("Look mom, no transformer!")
+            self.model = NoTransformerClassificationModel(**model_hparams)
+        else:
+            self.model = ClassificationModel(**model_hparams)
 
         # Initialize model, logger and optimizer
         self.init_model(dummy_batch, model_type)
@@ -204,7 +227,7 @@ class Trainer:
         state = state.apply_gradients(grads=grads)
 
         # Flatten the tuple
-        if self.model_type == "classifier":
+        if "classifier" in self.model_type:
             output = [output]  # [(loss, (rng, acc))]
             output = [
                 (loss, *aux_output) for loss, aux_output in output
@@ -375,6 +398,8 @@ class Trainer:
                     "ClassificationHead_0"
                 ]
 
+            restored["params"] = translate(self.state.params, restored["params"])
+
             if freeze_backbone:
                 print("Freezing the backbone")
 
@@ -402,6 +427,18 @@ class Trainer:
                 )
         else:
             print("Loading full train state")
+            restored["params"] = translate(self.state.params, restored["params"])
+
+            restored["opt_state"][1][0]["mu"] = translate(
+                self.state.opt_state[1][0].mu,
+                restored["opt_state"][1][0]["mu"],
+            )
+
+            restored["opt_state"][1][0]["nu"] = translate(
+                self.state.opt_state[1][0].nu,
+                restored["opt_state"][1][0]["nu"],
+            )
+
             restored_opt_state = jax.tree_unflatten(
                 jax.tree_structure(self.state.opt_state),
                 jax.tree_leaves(restored["opt_state"]),
@@ -433,6 +470,10 @@ class Trainer:
             mask=attention_matrices,
             rngs=None,
         )
+        # Prepend a black patch to the predictions to make the visualization line up
+        preds = jnp.concatenate(
+            (jnp.zeros((preds.shape[0], 1, preds.shape[2])), preds), axis=1
+        )
 
         for i in range(self.n_images_to_visualize):
             max_row = patch_indices[i][:, 0].max()
@@ -452,6 +493,11 @@ class Trainer:
                 pred_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
                     rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
                 )
+
+            plt.imshow(tgt_norm.transpose(1, 2, 0))
+            plt.savefig(f"target_{i}.png")
+            plt.imshow(pred_norm.transpose(1, 2, 0))
+            plt.savefig(f"pred_{i}.png")
 
             for idx, (row, col) in enumerate(patch_indices[i]):
                 if idx > 0 and row == 0 and col == 0:  # skip padded tokens

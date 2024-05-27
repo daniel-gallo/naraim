@@ -76,7 +76,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         "--model_type",
         type=str,
         default="autoregressor",
-        choices=["classifier", "autoregressor"],
+        choices=["classifier", "autoregressor", "no_transformer_classifier"],
         help="What to train",
     )
     trainer_args.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
@@ -237,6 +237,7 @@ if __name__ == "__main__":
             args.patch_size,
             args.native_resolutions,
             args.should_apply_auto_augment,
+            args.model_type == "autoregressor",
         )
         .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
