@@ -1,3 +1,4 @@
+import sys
 from collections import defaultdict
 from contextlib import nullcontext
 from pathlib import Path
@@ -16,7 +17,7 @@ from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
-from dataset import prefetch
+from dataset import prefetch, prep_image
 from model import ClassificationModel, PretrainingModel
 from model.classification import NoTransformerClassificationModel
 
@@ -265,6 +266,10 @@ class Trainer:
         return metric
 
     def train_model(self, train_loader, val_loader, max_num_iterations):
+        # patches, patch_indices, labels, attention_matrices, loss_masks = prep_image('./guitar.jpeg', 14, native_resolutions=True)
+        # self.visualize_pretraining_output(np.expand_dims(patches.numpy(), axis=0), np.expand_dims(patch_indices.numpy(), axis=0), np.expand_dims(attention_matrices.numpy(), axis=0), False)
+        # sys.exit()
+
         # Track best eval metric
         best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
 
@@ -484,10 +489,14 @@ class Trainer:
                     rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
                 )
 
-            plt.imshow(tgt_norm.transpose(1, 2, 0))
-            plt.savefig(f"target_{i}.png")
-            plt.imshow(pred_norm.transpose(1, 2, 0))
-            plt.savefig(f"pred_{i}.png")
+            # things = "guitar"
+            #
+            # plt.imshow(tgt_norm.transpose(1, 2, 0))
+            # plt.axis('off')
+            # plt.savefig(f"{things}_tgt_norm.png", bbox_inches='tight', dpi=600)
+            # plt.imshow(pred_norm.transpose(1, 2, 0))
+            # plt.axis('off')
+            # plt.savefig(f"{things}_pred_norm.png", bbox_inches='tight', dpi=600)
 
             for idx, (row, col) in enumerate(patch_indices[i]):
                 if idx > 0 and row == 0 and col == 0:  # skip padded tokens
@@ -502,6 +511,13 @@ class Trainer:
                     rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
                     * (var[i][idx] + 1.0e-6) ** 0.5
                 ) + mean[i][idx]
+
+            # plt.imshow(tgt_unnorm.transpose(1, 2, 0))
+            # plt.axis('off')
+            # plt.savefig(f"{things}_tgt_unnorm.png", bbox_inches='tight', dpi=600)
+            # plt.imshow(pred_unnorm.transpose(1, 2, 0))
+            # plt.axis('off')
+            # plt.savefig(f"{things}_pred_unnorm.png", bbox_inches='tight', dpi=600)
 
             # Tensorboard only accepts uint8 images
             tgt_norm = (tgt_norm.clip(0, 1) * 255).astype(np.uint8)

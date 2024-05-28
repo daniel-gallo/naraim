@@ -8,20 +8,21 @@ import tensorflow as tf
 import tensorflow_models as tfm
 from einops import rearrange
 from matplotlib import pyplot as plt
+from PIL import Image
 
 AUTOTUNE = tf.data.AUTOTUNE
 
 
 def resize_and_crop_image(image, patch_size):
     # extract the true height and width of the image (they are None when implicit)
-    H, W, _ = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
+    # H, W, _ = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
     # compute the sqrt of the aspect ratio
-    sqrt_ratio = tf.cast(tf.sqrt(H / W), tf.float32)
+    # sqrt_ratio = tf.cast(tf.sqrt(H / W), tf.float32)
     # compute the new height and width
-    H = tf.cast(224 * sqrt_ratio, tf.int32)
-    W = tf.cast(224**2 / tf.cast(H, tf.float32), tf.int32)
+    # H = tf.cast(224 * sqrt_ratio, tf.int32)
+    # W = tf.cast(224**2 / tf.cast(H, tf.float32), tf.int32)
     # resize the image, now the num pixels is ~= 224^2
-    image = tf.image.resize(image, [H, W])
+    # image = tf.image.resize(image, [H, W])
 
     h, w = tf.shape(image)[0], tf.shape(image)[1]
     target_height = h - (h % patch_size)
@@ -203,34 +204,66 @@ def prefetch(iterator):
         enqueue(1)
 
 
-if __name__ == "__main__":
-    tf.random.set_seed(0)
-    batch_size = 1
-    image_dir = "./tfrecords"
-    train_files = glob(os.path.join(image_dir, "*.tfrec"))
-    train_dataset = load_dataset(
-        train_files, 14, native_resolutions=True, should_apply_auto_augment=True
-    )
-    train_ds = prefetch(
-        train_dataset.shuffle(10 * batch_size, seed=1)
-        .batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
-        .repeat()
-        .as_numpy_iterator()
+def prep_image(image, patch_size, native_resolutions):
+    image = Image.open(image)
+    image = tf.cast(image, tf.float32) / 255.0
+
+    if native_resolutions:
+        image = resize_and_crop_image(image, patch_size)
+    else:
+        image = tf.image.resize(image, [224, 224])
+        image.set_shape((224, 224, image.shape[2]))
+
+    patches, patch_indices = patchify(image, patch_size)
+    seq_length = tf.shape(patches)[0]
+
+    max_seq_len = (224 * 5 // patch_size) ** 2
+    patches, _ = pad_sequence(patches, max_seq_len)
+    patch_indices, _ = pad_sequence(patch_indices, max_seq_len)
+
+    prefix = tf.experimental.numpy.random.randint(
+        low=1, high=seq_length, dtype=tf.experimental.numpy.int32
     )
 
-    for batch in train_ds:
-        patches, patch_indices, label, attention_matrix, loss_mask = batch
-        h, w = 1 + patch_indices[0].max(axis=0)
-        print(h, w)
-        image = rearrange(
-            patches[0][: h * w],
-            "(h w) (p1 p2 c) -> (h p1) (w p2) c",
-            h=h,
-            w=w,
-            p1=14,
-            p2=14,
-            c=3,
-        )
-        plt.imshow(image)
-        plt.show()
+    attention_matrix = get_attention_matrix(prefix, max_seq_len)
+    loss_mask = get_loss_mask(prefix, seq_length, max_seq_len)
+
+    return patches, patch_indices, 0, attention_matrix, loss_mask
+
+
+if __name__ == "__main__":
+    im = prep_image("./ILSVRC2012_val_00018070.JPEG", 14, True)[0]
+    plt.imshow(im)
+    plt.axis("off")
+    plt.savefig("im.png")
+
+    # tf.random.set_seed(0)
+    # batch_size = 1
+    # image_dir = "./tfrecords"
+    # train_files = glob(os.path.join(image_dir, "*.tfrec"))
+    # train_dataset = load_dataset(
+    #     train_files, 14, native_resolutions=True, should_apply_auto_augment=True
+    # )
+    # train_ds = prefetch(
+    #     train_dataset.shuffle(10 * batch_size, seed=1)
+    #     .batch(batch_size)
+    #     .prefetch(tf.data.AUTOTUNE)
+    #     .repeat()
+    #     .as_numpy_iterator()
+    # )
+    #
+    # for batch in train_ds:
+    #     patches, patch_indices, label, attention_matrix, loss_mask = batch
+    #     h, w = 1 + patch_indices[0].max(axis=0)
+    #     print(h, w)
+    #     image = rearrange(
+    #         patches[0][: h * w],
+    #         "(h w) (p1 p2 c) -> (h p1) (w p2) c",
+    #         h=h,
+    #         w=w,
+    #         p1=14,
+    #         p2=14,
+    #         c=3,
+    #     )
+    #     plt.imshow(image)
+    #     plt.show()
