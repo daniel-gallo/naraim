@@ -89,13 +89,27 @@ class FractionalPositionalEncoding(nn.Module):
         """
         embedding_dimension = x.shape[-1]
 
-        heights = patch_indices[:, :, 0].max(axis=1)
-        widths = patch_indices[:, :, 1].max(axis=1)
+        max_heights = (
+            patch_indices[:, :, 0]
+            .max(axis=1)[:, jnp.newaxis, jnp.newaxis]
+            .repeat(x.shape[1], axis=1)
+        )
+        max_widths = (
+            patch_indices[:, :, 1]
+            .max(axis=1)[:, jnp.newaxis, jnp.newaxis]
+            .repeat(x.shape[1], axis=1)
+        )
 
-        fractional_heights = patch_indices[:, :, 0:1] / heights
-        fractional_widths = patch_indices[:, :, 1:2] / widths
+        fractional_heights = patch_indices[:, :, 0:1] / max_heights
+        fractional_widths = patch_indices[:, :, 1:2] / max_widths
+
+        assert fractional_heights.shape == (x.shape[0], x.shape[1], 1)
+        assert fractional_widths.shape == (x.shape[0], x.shape[1], 1)
 
         height_embeddings = nn.Dense(embedding_dimension)(fractional_heights)
         widths_embeddings = nn.Dense(embedding_dimension)(fractional_widths)
+
+        assert height_embeddings.shape == (x.shape[0], x.shape[1], embedding_dimension)
+        assert widths_embeddings.shape == (x.shape[0], x.shape[1], embedding_dimension)
 
         return x + height_embeddings + widths_embeddings

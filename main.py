@@ -11,7 +11,9 @@ def _get_files(split: str):
     snellius_path = Path(
         f"/scratch-shared/fomo_imagenet/tfrecords_imagenet_shuffled_{split}"
     )
-    local_path = Path("./tfrecords")
+    local_path = Path(
+        f"/home/robert/Projects/data/imagenet/tfrecords_imagenet_shuffled_{split}"
+    )
 
     for path in (snellius_path, local_path):
         if path.exists():
