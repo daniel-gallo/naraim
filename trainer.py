@@ -97,11 +97,9 @@ class Trainer:
         # Initialize model, logger and optimizer
         self.init_model(dummy_batch, model_type)
         self.init_logger()
-        self.init_optimizer()
+        self.init_optimizer(freeze_backbone=freeze_backbone)
         if checkpoint_path_to_load:
-            self.load_checkpoint(
-                checkpoint_path_to_load, model_type, load_only_params, freeze_backbone
-            )
+            self.load_checkpoint(checkpoint_path_to_load, model_type, load_only_params)
 
         # Jitting train and eval steps
         self.train_step = jax.jit(self.train_step)
@@ -136,7 +134,7 @@ class Trainer:
         param_count = sum(x.size for x in jax.tree_leaves(self.init_params))
         print(f"Number of parameters: {param_count}")
 
-    def init_optimizer(self):
+    def init_optimizer(self, freeze_backbone=False):
         # If we do not have any checkpoint to load, then create a new state
         self.lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -152,6 +150,26 @@ class Trainer:
                 self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
             ),
         )
+
+        if freeze_backbone:
+            print(f"Freezing backbone", flush=True)
+            assert self.model_type == "classifier"
+
+            partition_optimizers = {
+                "trainable": self.optimizer,
+                "frozen": optax.set_to_zero(),
+            }
+
+            param_partitions = traverse_util.path_aware_map(
+                lambda path, _: "frozen"
+                if "ClassificationHead_0" not in path
+                else "trainable",
+                self.init_params,
+            )
+
+            self.optimizer = optax.multi_transform(
+                partition_optimizers, param_partitions
+            )
 
         # Initialize training state
         self.state = train_state.TrainState.create(
@@ -376,7 +394,6 @@ class Trainer:
         checkpoint_path_to_load,
         model_type,
         load_only_params=False,
-        freeze_backbone=False,
     ):
         # Restore the lastest checkpoint (the best saved model)
         checkpointer = ocp.PyTreeCheckpointer()
@@ -394,44 +411,23 @@ class Trainer:
 
             restored["params"] = translate(self.state.params, restored["params"])
 
-            if freeze_backbone:
-                print("Freezing the backbone")
-
-                partition_optimizers = {
-                    "trainable": self.optimizer,
-                    "frozen": optax.set_to_zero(),
-                }
-
-                param_partitions = traverse_util.path_aware_map(
-                    lambda path, _: "frozen"
-                    if "ClassificationHead_0" not in path
-                    else "trainable",
-                    restored["params"],
-                )
-                tx = optax.multi_transform(partition_optimizers, param_partitions)
-
-                self.state = train_state.TrainState.create(
-                    apply_fn=self.model.apply,
-                    params=restored["params"],
-                    tx=tx,
-                )
-            else:
-                self.state = self.state.replace(
-                    params=restored["params"],
-                )
+            self.state = self.state.replace(
+                params=restored["params"],
+            )
         else:
             print("Loading full train state")
             restored["params"] = translate(self.state.params, restored["params"])
 
-            restored["opt_state"][1][0]["mu"] = translate(
-                self.state.opt_state[1][0].mu,
-                restored["opt_state"][1][0]["mu"],
-            )
+            if model_type == "autoregressor":
+                restored["opt_state"][1][0]["mu"] = translate(
+                    self.state.opt_state[1][0].mu,
+                    restored["opt_state"][1][0]["mu"],
+                )
 
-            restored["opt_state"][1][0]["nu"] = translate(
-                self.state.opt_state[1][0].nu,
-                restored["opt_state"][1][0]["nu"],
-            )
+                restored["opt_state"][1][0]["nu"] = translate(
+                    self.state.opt_state[1][0].nu,
+                    restored["opt_state"][1][0]["nu"],
+                )
 
             restored_opt_state = jax.tree_unflatten(
                 jax.tree_structure(self.state.opt_state),
