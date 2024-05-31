@@ -198,7 +198,7 @@ class Trainer:
         patches, patch_indices, labels, attention_matrices, loss_masks = batch
 
         # Normalize the target
-        if self.norm_pix_loss:
+        if self.norm_pix_loss == "True":
             mean = jnp.mean(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
             var = jnp.var(patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
             targets = (patches - mean) / (var + 1.0e-6) ** 0.5

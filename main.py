@@ -211,12 +211,6 @@ if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
     print(f"Training with native resolutions: {args.native_resolutions}")
-
-    if args.norm_pix_loss == "False":
-        args.norm_pix_loss = False
-    else:
-        args.norm_pix_loss = True
-
     print(f"Using normalized pixel-loss: {args.norm_pix_loss}")
 
     train_ds = prefetch(
