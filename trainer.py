@@ -265,9 +265,6 @@ class Trainer:
         return metric
 
     def train_model(self, train_loader, val_loader, max_num_iterations):
-        # Track best eval metric
-        best_eval = float("-inf") if self.model_type == "autoregressor" else 0.0
-
         metric_to_eval = "mse" if "mse" in self.metrics_keys else "acc"
 
         train_metrics = defaultdict(list)
@@ -322,15 +319,6 @@ class Trainer:
                 ckpt_val_loader = val_loader.save()
                 eval_metric = self.eval_model(prefetch(val_loader))
                 val_loader.restore(ckpt_val_loader)
-
-                if metric_to_eval == "mse":
-                    eval_metric = -eval_metric
-
-                if eval_metric >= best_eval:
-                    best_eval = eval_metric
-
-                if metric_to_eval == "mse":
-                    eval_metric = -eval_metric
 
                 # Log the metric
                 self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
