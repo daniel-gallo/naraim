@@ -5,15 +5,18 @@ import tensorflow as tf
 
 from dataset import load_dataset, prefetch
 from trainer import Trainer
+from transformations.auto_augment import AutoAugment
+from transformations.native_aspect_ratio_resize import NativeAspectRatioResize
+from transformations.random_horizontal_flip import RandomHorizontalFlip
+from transformations.random_resized_crop import RandomResizedCrop
+from transformations.transformation import Transformation
 
 
 def _get_files(split: str):
     snellius_path = Path(
         f"/scratch-shared/fomo_imagenet/tfrecords_imagenet_shuffled_{split}"
     )
-    local_path = Path(
-        f"/home/robert/Projects/data/imagenet/tfrecords_imagenet_shuffled_{split}"
-    )
+    local_path = Path("tfrecords/")
 
     for path in (snellius_path, local_path):
         if path.exists():
@@ -28,6 +31,19 @@ def get_train_files():
 
 def get_val_files():
     return _get_files("val")
+
+
+def get_transformation(transformation: str) -> Transformation:
+    if transformation == "auto_augment":
+        return AutoAugment()
+    elif transformation == "native_aspect_ratio_resize":
+        return NativeAspectRatioResize(square_size=224, patch_size=14)
+    elif transformation == "random_horizontal_flip":
+        return RandomHorizontalFlip()
+    elif transformation == "random_resized_crop":
+        return RandomResizedCrop(size=224, scale=(0.4, 1.0), ratio=(0.75, 1.33))
+    else:
+        raise NotImplementedError()
 
 
 def add_model_args(model_args: argparse._ArgumentGroup):
@@ -181,16 +197,8 @@ def parse_args():
     add_trainer_args(trainer_args)
 
     parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
-    parser.add_argument(
-        "--native_resolutions",
-        action="store_true",
-        help="Whether we use the native resolutions of the images",
-    )
-    parser.add_argument(
-        "--should_apply_auto_augment",
-        action="store_true",
-        help="Whether we should apply AutoAugment",
-    )
+    parser.add_argument("--train_transformations", nargs="+", required=True)
+    parser.add_argument("--validation_transformations", nargs="+", required=True)
 
     args = parser.parse_args()
 
@@ -210,16 +218,13 @@ def parse_args():
 if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
-    print(f"Training with native resolutions: {args.native_resolutions}")
-    print(f"Using normalized pixel-loss: {args.norm_pix_loss}")
+    train_transformations = list(map(get_transformation, args.train_transformations))
+    validation_transformations = list(
+        map(get_transformation, args.validation_transformations)
+    )
 
     train_ds = prefetch(
-        load_dataset(
-            get_train_files(),
-            args.patch_size,
-            args.native_resolutions,
-            args.should_apply_auto_augment,
-        )
+        load_dataset(get_train_files(), args.patch_size, train_transformations)
         .shuffle(4 * args.batch_size)
         .repeat()
         .batch(args.batch_size)
@@ -228,13 +233,7 @@ if __name__ == "__main__":
     )
 
     validation_ds = (
-        load_dataset(
-            get_val_files(),
-            args.patch_size,
-            args.native_resolutions,
-            args.should_apply_auto_augment,
-            False,
-        )
+        load_dataset(get_val_files(), args.patch_size, validation_transformations)
         .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
         .as_numpy_iterator()
