@@ -3,3 +3,5 @@ flax
 jax
 pytest
 ruff
+tensorflow
+timm
