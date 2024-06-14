@@ -109,4 +109,4 @@ wcwidth==0.2.13
 Werkzeug==3.0.2
 wrapt==1.16.0
 zipp==3.18.1
-tf-models-official==2.16.0
+timm==1.0.3
