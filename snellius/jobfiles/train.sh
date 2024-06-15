@@ -23,16 +23,15 @@ module load Python/3.11.3-GCCcore-12.3.0
 
 source .venv/bin/activate
 
-previous_job_id=XXX
-last_checkpoint=$(ls /scratch-shared/fomo_logs/$previous_job_id/checkpoints/ | sort -n | tail -1)
-last_checkpoint_path=/scratch-shared/fomo_logs/$previous_job_id/checkpoints/$last_checkpoint
-echo "Resuming from $last_checkpoint_path"
+# previous_job_id=XXX
+# last_checkpoint=$(ls /scratch-shared/fomo_logs/$previous_job_id/checkpoints/ | sort -V | tail -1)
+# last_checkpoint_path=/scratch-shared/fomo_logs/$previous_job_id/checkpoints/$last_checkpoint
+# echo "Resuming from $last_checkpoint_path"
 
 XLA_PYTHON_CLIENT_MEM_FRACTION=.90 python main.py \
     --max_num_iterations 500000 \
     --checkpoints_path "$checkpoints_path" \
     --tensorboard_path "$tensorboard_path" \
-    --use_fractional_positional_encoding \
-    --native_resolutions \
-    --checkpoint_path_to_load "$last_checkpoint_path" \
-    --dropout_probability 0.1
+    --train_transformations "random_horizontal_flip" "random_resized_crop" \
+    --validation_transformations "random_resized_crop"
+    # --checkpoint_path_to_load "$last_checkpoint_path"

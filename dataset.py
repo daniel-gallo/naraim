@@ -5,33 +5,12 @@ from glob import glob
 
 import jax
 import tensorflow as tf
-import tensorflow_models as tfm
 from einops import rearrange
 from matplotlib import pyplot as plt
 
+from transformations.native_aspect_ratio_resize import NativeAspectRatioResize
+
 AUTOTUNE = tf.data.AUTOTUNE
-
-
-def resize_and_crop_image(image, patch_size):
-    # extract the true height and width of the image (they are None when implicit)
-    H, W, _ = tf.shape(image)[0], tf.shape(image)[1], tf.shape(image)[2]
-    # compute the sqrt of the aspect ratio
-    sqrt_ratio = tf.cast(tf.sqrt(H / W), tf.float32)
-    # compute the new height and width
-    H = tf.cast(224 * sqrt_ratio, tf.int32)
-    W = tf.cast(224**2 / tf.cast(H, tf.float32), tf.int32)
-    # resize the image, now the num pixels is ~= 224^2
-    image = tf.image.resize(image, [H, W])
-
-    h, w = tf.shape(image)[0], tf.shape(image)[1]
-    target_height = h - (h % patch_size)
-    target_width = w - (w % patch_size)
-    offset_height = (h - target_height) // 2
-    offset_width = (w - target_width) // 2
-    image = tf.image.crop_to_bounding_box(
-        image, offset_height, offset_width, target_height, target_width
-    )
-    return image
 
 
 def patchify(image, patch_size):
@@ -83,31 +62,7 @@ def get_loss_mask(prefix, seq_length, max_seq_length):
     return tf.concat([zeros_start, ones, zeros_end], axis=0)
 
 
-def augment_image(image, rng, should_apply_auto_augment):
-    seed = rng.make_seeds(1)[:, 0]
-
-    image = tf.image.stateless_random_flip_left_right(image, seed)
-    if should_apply_auto_augment:
-        # The augmentations use tf.random.uniform internally
-        # seed = rng.make_seeds(1)[0, 0]
-        # tf.random.set_seed(seed)
-        auto_augment = tfm.vision.augment.AutoAugment(
-            policies=tfm.vision.augment.AutoAugment.policy_reduced_imagenet()
-        )
-
-        image = auto_augment.distort(image)
-
-    return image
-
-
-def read_labeled_tfrecord(
-    example,
-    patch_size,
-    rng,
-    native_resolutions,
-    should_apply_auto_augment,
-    apply_augmentations=True,
-):
+def read_labeled_tfrecord(example, patch_size, transformations):
     feature = {
         "image": tf.io.FixedLenFeature([], tf.string),
         "path": tf.io.FixedLenFeature([], tf.string),
@@ -116,16 +71,12 @@ def read_labeled_tfrecord(
     }
 
     example = tf.io.parse_single_example(example, feature)
-    image = tf.image.decode_jpeg(example["image"], channels=3)
-    if apply_augmentations:
-        image = augment_image(image, rng, should_apply_auto_augment)
-    image = tf.cast(image, tf.float32) / 255.0
+    image = (
+        tf.cast(tf.image.decode_jpeg(example["image"], channels=3), tf.float32) / 255.0
+    )
 
-    if native_resolutions:
-        image = resize_and_crop_image(image, patch_size)
-    else:
-        image = tf.image.resize(image, [224, 224])
-        image.set_shape((224, 224, image.shape[2]))
+    for transformation in transformations:
+        image = transformation(image)
 
     patches, patch_indices = patchify(image, patch_size)
     seq_length = tf.shape(patches)[0]
@@ -159,26 +110,11 @@ def pad_sequence(seq, seq_len):
     return seq, padding_mask
 
 
-def load_dataset(
-    filenames,
-    patch_size,
-    native_resolutions,
-    should_apply_auto_augment,
-    apply_augmentations=True,
-):
+def load_dataset(filenames, patch_size, transformations):
     dataset = tf.data.TFRecordDataset(filenames, num_parallel_reads=AUTOTUNE)
 
-    # Create a random number generator for data augmentations
-    rng = tf.random.Generator.from_seed(42, alg="philox")
     dataset = dataset.map(
-        lambda x: read_labeled_tfrecord(
-            x,
-            patch_size,
-            rng,
-            native_resolutions,
-            should_apply_auto_augment,
-            apply_augmentations=apply_augmentations,
-        ),
+        lambda x: read_labeled_tfrecord(x, patch_size, transformations),
         num_parallel_calls=AUTOTUNE,
     )
     return dataset
@@ -208,9 +144,7 @@ if __name__ == "__main__":
     batch_size = 1
     image_dir = "./tfrecords"
     train_files = glob(os.path.join(image_dir, "*.tfrec"))
-    train_dataset = load_dataset(
-        train_files, 14, native_resolutions=True, should_apply_auto_augment=True
-    )
+    train_dataset = load_dataset(train_files, 14, [NativeAspectRatioResize(224, 14)])
     train_ds = prefetch(
         train_dataset.shuffle(10 * batch_size, seed=1)
         .batch(batch_size)
