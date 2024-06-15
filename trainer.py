@@ -1,5 +1,3 @@
-import sys
-from collections import defaultdict
 from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
@@ -45,11 +43,11 @@ def translate(target, source):
 
 @dataclass
 class Batch:
-    image: jax.Array
-    image_coords: jax.Array
+    patches: jax.Array
+    patch_coordinates: jax.Array
     labels: jax.Array
-    attention_mask: jax.Array
-    loss_mask: jax.Array
+    attention_masks: jax.Array
+    loss_masks: jax.Array
 
 
 class Trainer:
@@ -156,7 +154,7 @@ class Trainer:
         )
 
         if freeze_backbone:
-            print(f"Freezing backbone", flush=True)
+            print("Freezing backbone", flush=True)
             assert self.model_type == "classifier"
 
             partition_optimizers = {
@@ -183,34 +181,34 @@ class Trainer:
         )
 
     def loss_classifier(self, params, dropout_rng, batch: Batch, is_training: bool):
-        image, image_coords, labels, attention_matrix, loss_mask = batch
-
         logits = self.model.apply(
             {"params": params},
-            x=batch.image,
-            patch_indices=batch.image_coords,
+            x=batch.patches,
+            patch_indices=batch.patch_coordinates,
             is_training=is_training,
             rngs=dropout_rng,
         )
 
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels).mean()
+        loss = optax.softmax_cross_entropy_with_integer_labels(
+            logits, batch.labels
+        ).mean()
 
         correct_pred = jnp.equal(jnp.argmax(logits, axis=-1), batch.labels)
-        batch_size = batch.image.shape[0]
-        step_metrics = {
-            "loss": (loss, batch_size),
+        batch_size = batch.patches.shape[0]
+        metrics = {
+            "loss": (loss * batch_size, batch_size),
             "accuracy": (correct_pred.sum(), batch_size),
         }
 
-        return loss, step_metrics
+        return loss, metrics
 
     def loss_autoregressor(self, params, dropout_rng, batch: Batch, is_training: bool):
         preds = self.model.apply(
             {"params": params},
-            x=batch.image,
-            patch_indices=batch.image_coords,
+            x=batch.patches,
+            patch_indices=batch.patch_coordinates,
             is_training=is_training,
-            attention_mask=batch.attention_mask,
+            attention_mask=batch.attention_masks,
             rngs=dropout_rng,
         )
 
@@ -221,22 +219,23 @@ class Trainer:
 
         # Apply mask on the loss so that gradients are computed
         # for the patches that are between the prefixed and padding patches
-        loss = loss * batch.loss_mask[:, :-1, None]
+        loss = loss * batch.loss_masks[:, :-1, None]
         loss = jnp.mean(loss)
 
-        batch_size = batch.image.shape[0]
-        step_metrics = {"loss": (loss, batch_size)}
+        batch_size = batch.patches.shape[0]
+        metrics = {"loss": (loss * batch_size, batch_size)}
 
-        return loss, step_metrics
+        return loss, metrics
 
     def accumulate_gradients(self, loss_fn, state, batch, step_rng, num_minibatches):
-        batch_size = batch.image.shape[0]
+        batch_size = batch.patches.shape[0]
         minibatch_size = batch_size // num_minibatches
         rngs = jax.random.split(step_rng, num_minibatches)
 
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 
         grads = None
+        metrics = None
 
         for minibatch_idx in range(num_minibatches):
             with jax.named_scope(f"minibatch_{minibatch_idx}"):
@@ -245,20 +244,21 @@ class Trainer:
                 end = start + minibatch_size
                 minibatch = jax.tree_map(lambda x: x[start:end], batch)
 
-                (_, ministep_metrics), step_grads = grad_fn(
+                (_, minibatch_metrics), minibatch_grads = grad_fn(
                     state.params, rngs[minibatch_idx], minibatch
                 )
 
                 # Accumulate gradients and metrics across minibatches.
                 if grads is None:
-                    grads = step_grads
-                    step_metrics = ministep_metrics
+                    grads = minibatch_grads
+                    metrics = minibatch_metrics
                 else:
-                    grads = jax.tree_map(jnp.add, grads, step_grads)
-                    step_metrics = jax.tree_map(jnp.add, step_metrics, ministep_metrics)
+                    grads = jax.tree_map(jnp.add, grads, minibatch_grads)
+                    metrics = jax.tree_map(jnp.add, metrics, minibatch_metrics)
 
+        # TODO: this fails if num_minibatches does not evenly divide the batch_size
         grads = jax.tree_map(lambda g: g / num_minibatches, grads)
-        return grads, step_metrics
+        return grads, metrics
 
     def train_step(self, loss_fn, state, step_rng, batch, num_minibatches, metrics):
         grads, step_metrics = self.accumulate_gradients(
@@ -278,8 +278,6 @@ class Trainer:
         return loss_fn(state.params, step_rng, batch)[1]
 
     def train_model(self, train_loader, val_loader):
-        metric_to_eval = "loss" if self.model_type == "autoregressor" else "accuracy"
-
         if self.profile:
             jax.profiler.start_trace(self.tensorboard_path)
 
@@ -314,27 +312,15 @@ class Trainer:
             # Normalise the patches
             if self.model_type == "autoregressor" and self.norm_pix_loss == "True":
                 mean = jnp.mean(
-                    batch.image, axis=-1, keepdims=True
+                    batch.patches, axis=-1, keepdims=True
                 )  # shape [bs, patches, 1]
                 var = jnp.var(
-                    batch.image, axis=-1, keepdims=True
+                    batch.patches, axis=-1, keepdims=True
                 )  # shape [bs, patches, 1]
-                labels_norm = (batch.image - mean) / (var + 1.0e-6) ** 0.5
+                labels_norm = (batch.patches - mean) / (var + 1.0e-6) ** 0.5
                 batch = batch.replace(labels=labels_norm)
             elif self.model_type == "autoregressor":
-                batch = batch.replace(labels=batch.image)
-
-            if train_metrics is None:
-                _, metric_shapes = jax.eval_shape(
-                    fun=partial(self.train_step, num_minibatches=4, loss_fn=train_fn),
-                    step_rng=self.rng,
-                    state=self.state,
-                    metrics=None,
-                    batch=batch,
-                )
-                train_metrics = jax.tree_map(
-                    lambda x: jnp.zeros(x.shape, dtype=x.dtype), metric_shapes
-                )
+                batch = batch.replace(labels=batch.patches)
 
             if self.profile:
                 context_manager = jax.profiler.StepTraceAnnotation(
@@ -357,26 +343,31 @@ class Trainer:
 
             # Logging
             if idx > first_step and (idx + 1) % self.log_every_n_steps == 0:
-                for key in train_metrics.keys():
+                for metric_name in train_metrics.keys():
+                    metric_value = jax.device_get(train_metrics)[metric_name][0]
+                    metric_count = jax.device_get(train_metrics)[metric_name][1]
                     self.logger.add_scalar(
-                        f"{key}/train",
-                        jax.device_get(train_metrics)[key][0]
-                        / jax.device_get(train_metrics)[key][1],
-                        idx,
+                        f"{metric_name}/train", metric_value / metric_count, idx
                     )
                 # Reinitialize the train_metrics
-                train_metrics = defaultdict(list)
+                train_metrics = jax.tree.map(lambda x: jnp.zeros_like(x), train_metrics)
 
             # Do evaluation once eval_steps
             if idx > first_step and (idx + 1) % self.eval_every_n_steps == 0:
                 self.save_checkpoint(step=idx + 1)
                 # Evaluate the model and return the eval metrics
                 ckpt_val_loader = val_loader.save()
-                eval_metric = self.eval_model(eval_fn, self.state, prefetch(val_loader))
+                eval_metrics = self.eval_model(
+                    eval_fn, self.state, prefetch(val_loader)
+                )
                 val_loader.restore(ckpt_val_loader)
 
-                # Log the metric
-                self.logger.add_scalar(f"{metric_to_eval}/val", eval_metric, idx)
+                for metric_name in eval_metrics.keys():
+                    metric_value = jax.device_get(eval_metrics)[metric_name][0]
+                    metric_count = jax.device_get(eval_metrics)[metric_name][1]
+                    self.logger.add_scalar(
+                        f"{metric_name}/val", metric_value / metric_count, idx
+                    )
 
                 # Log the learning rate
                 self.logger.add_scalar(
@@ -387,7 +378,7 @@ class Trainer:
                 self.logger.flush()
 
         if self.profile:
-            train_metrics[metric_to_eval][-1].block_until_ready()
+            train_metrics.values()[0].block_until_ready()
             jax.profiler.stop_trace()
 
         self.logger.close()
@@ -404,41 +395,41 @@ class Trainer:
             # Normalise the patches
             if self.model_type == "autoregressor" and self.norm_pix_loss == "True":
                 mean = jnp.mean(
-                    batch.image, axis=-1, keepdims=True
+                    batch.patches, axis=-1, keepdims=True
                 )  # shape [bs, patches, 1]
                 var = jnp.var(
-                    batch.image, axis=-1, keepdims=True
+                    batch.patches, axis=-1, keepdims=True
                 )  # shape [bs, patches, 1]
-                labels_norm = (batch.image - mean) / (var + 1.0e-6) ** 0.5
+                labels_norm = (batch.patches - mean) / (var + 1.0e-6) ** 0.5
                 batch = batch.replace(labels=labels_norm)
             elif self.model_type == "autoregressor":
-                batch = batch.replace(labels=batch.image)
+                batch = batch.replace(labels=batch.patches)
 
             if self.model_type == "autoregressor":
                 # Always plot the same few images for easy comparison across training stages
                 if idx == 0:
-                    patches, patch_indices, _, attention_matrices, _ = batch
                     self.visualize_pretraining_output(
-                        patches,
-                        patch_indices,
-                        attention_matrices,
+                        batch.patches,
+                        batch.patch_coordinates,
+                        batch.attention_masks,
                         plot_random_images=False,
                     )
 
                 # Also plot a few random images for a more representative sample
                 if idx == batches_to_skip:
-                    patches, patch_indices, _, attention_matrices, _ = batch
                     self.visualize_pretraining_output(
-                        patches,
-                        patch_indices,
-                        attention_matrices,
+                        batch.patches,
+                        batch.patch_coordinates,
+                        batch.attention_masks,
                         plot_random_images=True,
                     )
-            step_metrics = loss_fn(params=state.params, dropout_rng=None, batch=batch)
-            if metrics == None:
-                metrics = step_metrics
+            _, batch_metrics = loss_fn(
+                params=state.params, dropout_rng=None, batch=batch
+            )
+            if metrics is None:
+                metrics = batch_metrics
             else:
-                metrics = jax.tree_map(jnp.add, metrics, step_metrics)
+                metrics = jax.tree_map(jnp.add, metrics, batch_metrics)
 
         return metrics
 
