@@ -45,7 +45,7 @@ class ClassificationModel(nn.Module):
     use_fractional_positional_encoding: bool = False
 
     @nn.compact
-    def __call__(self, x, patch_indices, training: bool):
+    def __call__(self, x, patch_indices, is_training: bool):
         x = InitialProjection(
             dtype=self.dtype, embedding_dimension=self.embedding_dimension
         )(x)
@@ -63,7 +63,7 @@ class ClassificationModel(nn.Module):
             embedding_dimension=self.embedding_dimension,
             hidden_dimension=self.hidden_dimension,
             dropout_probability=self.dropout_probability,
-        )(x, training)
+        )(x, is_training)
         x = ClassificationHead(
             dtype=self.dtype,
             num_heads=self.num_heads,

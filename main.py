@@ -101,7 +101,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     trainer_args.add_argument(
         "--log_every_n_steps",
         type=int,
-        default=200,
+        default=500,
         help="Number of steps in between logging",
     )
     trainer_args.add_argument(
@@ -168,6 +168,13 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
 
     trainer_args.add_argument(
         "--n_images_to_visualize", type=int, default=5, help="How many images to plot"
+    )
+
+    trainer_args.add_argument(
+        "--num_minibatches",
+        type=int,
+        default=1,
+        help="Number of minibatches to use for gradient accumulation",
     )
 
 
@@ -244,4 +251,4 @@ if __name__ == "__main__":
 
     trainer_kwargs["dummy_batch"] = next(iter(train_ds))
     trainer = Trainer(model_hparams=model_hparams, **trainer_kwargs)
-    trainer.train_model(train_ds, validation_ds, args.max_num_iterations)
+    trainer.train_model(train_ds, validation_ds)

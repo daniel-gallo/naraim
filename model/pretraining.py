@@ -31,7 +31,7 @@ class PretrainingModel(nn.Module):
     use_fractional_positional_encoding: bool = False
 
     @nn.compact
-    def __call__(self, x, patch_indices, training: bool, mask=None):
+    def __call__(self, x, patch_indices, is_training: bool, attention_mask=None):
         x = InitialProjection(
             dtype=self.dtype, embedding_dimension=self.embedding_dimension
         )(x)
@@ -49,7 +49,7 @@ class PretrainingModel(nn.Module):
             embedding_dimension=self.embedding_dimension,
             hidden_dimension=self.hidden_dimension,
             dropout_probability=self.dropout_probability,
-        )(x, training, mask=mask)
+        )(x, is_training, mask=attention_mask)
         x = PretrainingHead(
             dtype=self.dtype, patch_size=self.patch_size, num_channels=self.num_channels
         )(x)
