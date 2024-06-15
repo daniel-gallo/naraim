@@ -46,6 +46,15 @@ def get_transformation(transformation: str) -> Transformation:
         raise NotImplementedError()
 
 
+def assert_transformation_list_is_valid(transformation_list: [Transformation]):
+    # FIXME #24: AutoAugment only works if it's the last transformation
+    num_transformations = len(transformation_list)
+
+    for i, transformation in enumerate(transformation_list):
+        if isinstance(transformation, AutoAugment) and i != (num_transformations - 1):
+            raise NotImplementedError("AutoAugment has to be the last transformation. ")
+
+
 def add_model_args(model_args: argparse._ArgumentGroup):
     """
     Arguments that will be passed to initialize the model
@@ -222,6 +231,8 @@ if __name__ == "__main__":
     validation_transformations = list(
         map(get_transformation, args.validation_transformations)
     )
+    assert_transformation_list_is_valid(train_transformations)
+    assert_transformation_list_is_valid(validation_transformations)
 
     train_ds = prefetch(
         load_dataset(get_train_files(), args.patch_size, train_transformations)

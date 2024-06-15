@@ -11,7 +11,7 @@ class AutoAugment(Transformation):
         )
 
     def __call__(self, image):
-        # TODO(daniel-gallo): for some reason this does not seem to work :///
+        # FIXME #24: AutoAugment only works if it's the last transformation
         @tf.numpy_function(Tout=tf.float32)
         def _run_in_eager_mode(image):
             image_as_pil = tf.keras.preprocessing.image.array_to_img(image)
