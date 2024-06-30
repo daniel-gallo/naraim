@@ -16,6 +16,7 @@ from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
+from common import warmup_exponential_decay_cooldown_scheduler
 from dataset import prefetch
 from model import ClassificationModel, PretrainingModel
 from model.classification import NoTransformerClassificationModel
@@ -56,6 +57,7 @@ class Trainer:
         model_type,
         dummy_batch,
         lr,
+        decay_rate,
         beta2,
         weight_decay,
         seed,
@@ -69,6 +71,7 @@ class Trainer:
         norm_pix_loss,
         max_num_iterations,
         warmup_steps,
+        cooldown_steps,
         model_hparams,
         profile,
         grad_clip_norm,
@@ -81,6 +84,7 @@ class Trainer:
         self.lr = lr
         self.beta2 = beta2
         self.weight_decay = weight_decay
+        self.decay_rate = decay_rate
         self.seed = seed
         self.rng = jax.random.PRNGKey(self.seed)
         self.norm_pix_loss = norm_pix_loss
@@ -88,6 +92,7 @@ class Trainer:
         self.eval_every_n_steps = eval_every_n_steps
         self.max_num_iterations = max_num_iterations
         self.warmup_steps = warmup_steps
+        self.cooldown_steps = cooldown_steps
         self.tensorboard_path = tensorboard_path
         self.checkpoints_path = Path(checkpoints_path).absolute()
         self.profile = profile
@@ -137,13 +142,19 @@ class Trainer:
 
     def init_optimizer(self, freeze_backbone=False):
         # If we do not have any checkpoint to load, then create a new state
-        # TODO use exponential scheduler
-        self.lr_schedule = optax.warmup_cosine_decay_schedule(
-            init_value=0.0,
-            peak_value=self.lr,
-            decay_steps=self.max_num_iterations,
-            warmup_steps=self.warmup_steps,
-            end_value=self.lr_end_value,
+
+        # decay_steps = 500k - 10k - 5k
+        self.decay_steps = (
+            self.max_num_iterations - self.cooldown_steps - self.warmup_steps
+        )
+
+        self.lr_schedule = warmup_exponential_decay_cooldown_scheduler(
+            self.warmup_steps,
+            self.lr,
+            self.decay_steps,
+            self.decay_rate,
+            self.cooldown_steps,
+            self.lr_end_value,
         )
 
         self.optimizer = optax.chain(
