@@ -78,6 +78,7 @@ class Trainer:
         lr_end_value,
         n_images_to_visualize,
         num_minibatches,
+        lr_schedule_type,
     ):
         super().__init__()
         self.model_type = model_type
@@ -100,6 +101,7 @@ class Trainer:
         self.grad_clip_norm = grad_clip_norm
         self.n_images_to_visualize = n_images_to_visualize
         self.num_minibatches = num_minibatches
+        self.lr_schedule_type = lr_schedule_type
 
         # Get empty model based on model_type
         if model_type == "autoregressor":
@@ -142,20 +144,29 @@ class Trainer:
 
     def init_optimizer(self, freeze_backbone=False):
         # If we do not have any checkpoint to load, then create a new state
+        if self.lr_schedule_type == "cosine":
+            self.lr_schedule = optax.warmup_cosine_decay_schedule(
+                init_value=0.0,
+                peak_value=self.lr,
+                decay_steps=self.max_num_iterations,
+                warmup_steps=self.warmup_steps,
+                end_value=self.lr_end_value,
+            )
 
-        # decay_steps = 500k - 10k - 5k
-        self.decay_steps = (
-            self.max_num_iterations - self.cooldown_steps - self.warmup_steps
-        )
+        elif self.lr_schedule_type == "exponential":
+            # decay_steps = 500k - 10k - 5k
+            self.decay_steps = (
+                self.max_num_iterations - self.cooldown_steps - self.warmup_steps
+            )
 
-        self.lr_schedule = warmup_exponential_decay_cooldown_scheduler(
-            self.warmup_steps,
-            self.lr,
-            self.decay_steps,
-            self.decay_rate,
-            self.cooldown_steps,
-            self.lr_end_value,
-        )
+            self.lr_schedule = warmup_exponential_decay_cooldown_scheduler(
+                self.warmup_steps,
+                self.lr,
+                self.decay_steps,
+                self.decay_rate,
+                self.cooldown_steps,
+                self.lr_end_value,
+            )
 
         self.optimizer = optax.chain(
             optax.clip_by_global_norm(self.grad_clip_norm),  # Clip gradients at norm 1

@@ -205,6 +205,14 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         help="Number of minibatches to use for gradient accumulation",
     )
 
+    trainer_args.add_argument(
+        "--lr_schedule_type",
+        type=str,
+        choices=["exponential", "cosine"],
+        default="exponential",
+        help="Type of learning rate schedule",
+    )
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train model")
