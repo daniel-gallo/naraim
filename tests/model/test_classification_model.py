@@ -36,13 +36,13 @@ def test_classification_model():
     )
 
     rng = random.key(seed=0)
-    params = classification_model.init(rng, x, patch_indices, training=True)
+    params = classification_model.init(rng, x, patch_indices, is_training=True)
 
     # Check if shape is correct
     output_shape = classification_model.apply(
-        params, x, patch_indices, training=True, rngs={"dropout": rng}
+        params, x, patch_indices, is_training=True, rngs={"dropout": rng}
     ).shape
     assert output_shape == (bs, num_categories)
 
     # Check inference does not need rng
-    classification_model.apply(params, x, patch_indices, training=False)
+    classification_model.apply(params, x, patch_indices, is_training=False)
