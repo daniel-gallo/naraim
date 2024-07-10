@@ -186,9 +186,19 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
     trainer_args.add_argument("--profile", action="store_true")
 
     trainer_args.add_argument("--warmup_steps", type=int, default=5_000)
-    trainer_args.add_argument("--cooldown_steps", type=int, default=10_000)
+    trainer_args.add_argument(
+        "--cooldown_steps",
+        type=int,
+        default=10_000,
+        help="Cooldown number of iterations for the exponential lr schedule",
+    )
 
-    trainer_args.add_argument("--decay_rate", type=int, default=0.1)
+    trainer_args.add_argument(
+        "--decay_rate",
+        type=float,
+        default=0.1,
+        help="Decay rate for the exponential lr schedule",
+    )
 
     trainer_args.add_argument(
         "--grad_clip_norm", type=float, default=1.0, help="Gradient clipping norm"
