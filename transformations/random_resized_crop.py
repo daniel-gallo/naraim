@@ -86,6 +86,6 @@ class RandomResizedCrop(Transformation):
         i, j, new_height, new_width = self.get_params(image)
         crop = image[i : i + new_height, j : j + new_width]
         resized_crop = tf.image.resize(
-            crop, self.size, method=tf.image.ResizeMethod.BICUBIC
+            crop, self.size, method=tf.image.ResizeMethod.BICUBIC, antialias=True
         )
         return resized_crop
