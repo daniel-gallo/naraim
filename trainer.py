@@ -400,7 +400,7 @@ class Trainer:
                 self.logger.flush()
 
         if self.profile:
-            train_metrics.values()[0].block_until_ready()
+            list(train_metrics.values())[0][0].block_until_ready()
             jax.profiler.stop_trace()
 
         self.logger.close()
