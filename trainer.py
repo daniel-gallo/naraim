@@ -218,10 +218,9 @@ class Trainer:
         correct_pred = jnp.equal(jnp.argmax(logits, axis=-1), batch.labels)
         batch_size = batch.patches.shape[0]
         metrics = {
-            "loss": (loss * batch_size, batch_size),
-            "accuracy": (correct_pred.sum(), batch_size),
+            "loss": ((loss * batch_size).astype(jnp.float32), batch_size),
+            "accuracy": (correct_pred.sum().astype(jnp.float32), batch_size),
         }
-        metrics = jax.tree_map(lambda x: x.astype(jnp.float32), metrics)
 
         return loss, metrics
 
@@ -246,8 +245,7 @@ class Trainer:
         loss = jnp.mean(loss)
 
         batch_size = batch.patches.shape[0]
-        metrics = {"loss": (loss * batch_size, batch_size)}
-        metrics = jax.tree_map(lambda x: x.astype(jnp.float32), metrics)
+        metrics = {"loss": ((loss * batch_size).astype(jnp.float32), batch_size)}
 
         return loss, metrics
 
