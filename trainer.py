@@ -221,6 +221,7 @@ class Trainer:
             "loss": (loss * batch_size, batch_size),
             "accuracy": (correct_pred.sum(), batch_size),
         }
+        metrics = jax.tree_map(lambda x: x.astype(jnp.float32), metrics)
 
         return loss, metrics
 
@@ -246,6 +247,7 @@ class Trainer:
 
         batch_size = batch.patches.shape[0]
         metrics = {"loss": (loss * batch_size, batch_size)}
+        metrics = jax.tree_map(lambda x: x.astype(jnp.float32), metrics)
 
         return loss, metrics
 
