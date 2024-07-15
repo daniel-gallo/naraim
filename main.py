@@ -5,10 +5,13 @@ import tensorflow as tf
 
 from dataset import load_dataset, prefetch
 from trainer import Trainer
-from transformations.auto_augment import AutoAugment
-from transformations.native_aspect_ratio_resize import NativeAspectRatioResize
-from transformations.random_horizontal_flip import RandomHorizontalFlip
-from transformations.random_resized_crop import RandomResizedCrop
+from transformations import (
+    AutoAugment,
+    NativeAspectRatioResize,
+    RandomCrop,
+    RandomHorizontalFlip,
+    RandomResizedCrop,
+)
 from transformations.transformation import Transformation
 
 
@@ -42,6 +45,8 @@ def get_transformation(transformation: str) -> Transformation:
         return RandomHorizontalFlip()
     elif transformation == "random_resized_crop":
         return RandomResizedCrop(size=224, scale=(0.4, 1.0), ratio=(0.75, 1.33))
+    elif transformation == "random_crop":
+        return RandomCrop(scale=(0.4, 1.0), ratio=(0.75, 1.33))
     else:
         raise NotImplementedError()
 
