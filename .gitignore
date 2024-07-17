@@ -162,3 +162,4 @@ cython_debug/
 data/
 checkpoints/
 .DS_Store
+backup
