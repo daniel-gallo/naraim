@@ -46,7 +46,9 @@ def get_transformation(transformation: str) -> Transformation:
     elif transformation == "random_resized_crop":
         return RandomResizedCrop(size=224, scale=(0.4, 1.0), ratio=(0.75, 1.33))
     elif transformation == "random_crop":
-        return RandomCrop(scale=(0.4, 1.0), ratio=(0.75, 1.33))
+        return RandomCrop(
+            scale=(0.4, 1.0), ratio=(0.75, 1.33), min_num_pixels=224 * 224
+        )
     else:
         raise NotImplementedError()
 
