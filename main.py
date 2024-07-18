@@ -282,7 +282,6 @@ if __name__ == "__main__":
         load_dataset(get_val_files(), args.patch_size, validation_transformations)
         .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
-        .as_numpy_iterator()
     )
 
     args.dummy_batch = next(iter(train_ds))

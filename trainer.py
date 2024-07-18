@@ -378,11 +378,9 @@ class Trainer:
             if idx > first_step and (idx + 1) % self.eval_every_n_steps == 0:
                 self.save_checkpoint(step=idx + 1)
                 # Evaluate the model and return the eval metrics
-                ckpt_val_loader = val_loader.save()
                 eval_metrics = self.eval_model(
-                    eval_fn, self.state, prefetch(val_loader)
+                    eval_fn, self.state, prefetch(val_loader.as_numpy_iterator())
                 )
-                val_loader.restore(ckpt_val_loader)
 
                 for metric_name in eval_metrics.keys():
                     metric_value = jax.device_get(eval_metrics)[metric_name][0]
