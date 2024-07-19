@@ -119,6 +119,10 @@ class Trainer:
         if checkpoint_path_to_load:
             self.load_checkpoint(checkpoint_path_to_load, model_type, load_only_params)
 
+        # Async checkpointer
+        # TODO: Reimplement checkpointing
+        self.checkpointer = AsyncCheckpointer(PyTreeCheckpointHandler())
+
         # Jitting train and eval steps
         self.train_step = jax.jit(
             self.train_step, static_argnames=("loss_fn", "num_minibatches")
@@ -401,6 +405,8 @@ class Trainer:
             list(train_metrics.values())[0][0].block_until_ready()
             jax.profiler.stop_trace()
 
+        self.checkpointer.wait_until_finished()
+
         self.logger.close()
 
     def eval_model(self, loss_fn, state, data_loader):
@@ -454,8 +460,7 @@ class Trainer:
         return metrics
 
     def save_checkpoint(self, step):
-        checkpointer = AsyncCheckpointer(PyTreeCheckpointHandler())
-        checkpointer.save(self.checkpoints_path / f"step_{step}", self.state)
+        self.checkpointer.save(self.checkpoints_path / f"step_{step}", self.state)
 
     def load_checkpoint(
         self,
