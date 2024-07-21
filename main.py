@@ -11,6 +11,7 @@ from transformations import (
     RandomCrop,
     RandomHorizontalFlip,
     RandomResizedCrop,
+    SquareResize,
 )
 from transformations.transformation import Transformation
 
@@ -49,6 +50,8 @@ def get_transformation(transformation: str) -> Transformation:
         return RandomCrop(
             scale=(0.4, 1.0), ratio=(0.75, 1.33), min_num_pixels=224 * 224
         )
+    elif transformation == "square_resize":
+        return SquareResize(224)
     else:
         raise NotImplementedError()
 

@@ -3,6 +3,7 @@ from .native_aspect_ratio_resize import NativeAspectRatioResize
 from .random_crop import RandomCrop
 from .random_horizontal_flip import RandomHorizontalFlip
 from .random_resized_crop import RandomResizedCrop
+from .square_resize import SquareResize
 
 __all__ = [
     AutoAugment,
@@ -10,4 +11,5 @@ __all__ = [
     RandomCrop,
     RandomHorizontalFlip,
     RandomResizedCrop,
+    SquareResize,
 ]
