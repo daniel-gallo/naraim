@@ -87,10 +87,17 @@ class NoTransformerClassificationModel(nn.Module):
     use_fractional_positional_encoding: bool = False
 
     @nn.compact
-    def __call__(self, x, patch_indices, training: bool):
+    def __call__(self, x, patch_indices, is_training: bool):
         x = InitialProjection(
             dtype=self.dtype, embedding_dimension=self.embedding_dimension
         )(x)
+        if self.use_fractional_positional_encoding:
+            x = FractionalPositionalEncoding()(x, patch_indices)
+        else:
+            x = PositionalEncoding(
+                embedding_dimension=self.embedding_dimension,
+                max_num_patches=self.max_num_patches,
+            )(x, patch_indices)
         x = ClassificationHead(
             dtype=self.dtype,
             num_heads=self.num_heads,

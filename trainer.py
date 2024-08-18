@@ -177,7 +177,7 @@ class Trainer:
 
         if freeze_backbone:
             print("Freezing backbone", flush=True)
-            assert self.model_type == "classifier"
+            assert "classifier" in self.model_type
 
             partition_optimizers = {
                 "trainable": self.optimizer,
@@ -308,8 +308,12 @@ class Trainer:
 
         # Pick the correct loss function
         # TODO somewhere else
-        assert self.model_type in ["autoregressor", "classifier"]
-        if self.model_type == "classifier":
+        assert self.model_type in [
+            "autoregressor",
+            "classifier",
+            "no_transformer_classifier",
+        ]
+        if "classifier" in self.model_type:
             train_fn = partial(self.loss_classifier, is_training=True)
             eval_fn = partial(self.loss_classifier, is_training=False)
         else:
