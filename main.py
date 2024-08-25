@@ -6,6 +6,7 @@ import tensorflow as tf
 from dataset import load_dataset, prefetch
 from trainer import Trainer
 from transformations import (
+    AIMInference,
     AutoAugment,
     NativeAspectRatioResize,
     RandomCrop,
@@ -16,25 +17,20 @@ from transformations import (
 from transformations.transformation import Transformation
 
 
-def _get_files(split: str):
-    snellius_path = Path(
-        f"/scratch-shared/fomo_imagenet/tfrecords_imagenet_shuffled_{split}"
-    )
-    local_path = Path("tfrecords/")
-
-    for path in (snellius_path, local_path):
-        if path.exists():
-            return sorted(path.glob("*.tfrec"))
+def _get_files(split: str, dataset_path: str):
+    dataset_path = Path(dataset_path) / split
+    if dataset_path.exists():
+        return list(dataset_path.glob("*.tfrec"))
 
     raise Exception("No train TFRecords found")
 
 
-def get_train_files():
-    return _get_files("train")
+def get_train_files(dataset_path: str):
+    return _get_files("train", dataset_path)
 
 
-def get_val_files():
-    return _get_files("val")
+def get_val_files(dataset_path: str):
+    return _get_files("val", dataset_path)
 
 
 def get_transformation(transformation: str) -> Transformation:
@@ -52,6 +48,8 @@ def get_transformation(transformation: str) -> Transformation:
         )
     elif transformation == "square_resize":
         return SquareResize(224)
+    elif transformation == "aim_inference":
+        return AIMInference(resize_size=256, crop_size=224)
     else:
         raise NotImplementedError()
 
@@ -246,6 +244,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=512, help="Batch size")
     parser.add_argument("--train_transformations", nargs="+", required=True)
     parser.add_argument("--validation_transformations", nargs="+", required=True)
+    parser.add_argument("--dataset_path", type=str, required=True)
 
     args = parser.parse_args()
 
@@ -273,7 +272,9 @@ if __name__ == "__main__":
     assert_transformation_list_is_valid(validation_transformations)
 
     train_ds = prefetch(
-        load_dataset(get_train_files(), args.patch_size, train_transformations)
+        load_dataset(
+            get_train_files(args.dataset_path), args.patch_size, train_transformations
+        )
         .shuffle(4 * args.batch_size)
         .repeat()
         .batch(args.batch_size)
@@ -282,7 +283,11 @@ if __name__ == "__main__":
     )
 
     validation_ds = (
-        load_dataset(get_val_files(), args.patch_size, validation_transformations)
+        load_dataset(
+            get_val_files(args.dataset_path),
+            args.patch_size,
+            validation_transformations,
+        )
         .batch(args.batch_size, drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
     )
