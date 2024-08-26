@@ -242,6 +242,12 @@ class Trainer:
         # Apply mask on the loss so that gradients are computed
         # for the patches that are between the prefixed and padding patches
         loss = loss * batch.loss_masks[:, :-1, None]
+
+        # The padding and prefix patches are set to zero now.
+        # If we take the mean, we will underestimate the actual value
+        # loss = jnp.mean(loss)  # WRONG!
+        valid_pixels_per_sample = (jnp.sum(batch.loss_masks, axis=1) - 1) * loss.shape[-1]
+        loss = jnp.sum(loss, axis=(1, 2)) / valid_pixels_per_sample
         loss = jnp.mean(loss)
 
         batch_size = batch.patches.shape[0]
