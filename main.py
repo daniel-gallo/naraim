@@ -24,7 +24,7 @@ def _get_files(split: str):
 
     for path in (snellius_path, local_path):
         if path.exists():
-            return list(path.glob("*.tfrec"))
+            return sorted(path.glob("*.tfrec"))
 
     raise Exception("No train TFRecords found")
 
