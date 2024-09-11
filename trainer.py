@@ -16,7 +16,7 @@ from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
-from common import warmup_exponential_decay_cooldown_scheduler
+from exponential_scheduler import warmup_exponential_decay_cooldown_scheduler
 from dataset import prefetch
 from model import ClassificationModel, PretrainingModel
 from model.classification import NoTransformerClassificationModel
