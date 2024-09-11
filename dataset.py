@@ -1,14 +1,9 @@
 import collections
 import itertools
-import os
-from glob import glob
 
 import jax
 import tensorflow as tf
-from einops import rearrange
-from matplotlib import pyplot as plt
 
-from transformations.native_aspect_ratio_resize import NativeAspectRatioResize
 
 AUTOTUNE = tf.data.AUTOTUNE
 
@@ -137,34 +132,3 @@ def prefetch(iterator):
     while queue:
         yield queue.popleft()
         enqueue(1)
-
-
-if __name__ == "__main__":
-    tf.random.set_seed(0)
-    batch_size = 1
-    image_dir = "./tfrecords"
-    train_files = glob(os.path.join(image_dir, "*.tfrec"))
-    train_dataset = load_dataset(train_files, 14, [NativeAspectRatioResize(224, 14)])
-    train_ds = prefetch(
-        train_dataset.shuffle(10 * batch_size, seed=1)
-        .batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
-        .repeat()
-        .as_numpy_iterator()
-    )
-
-    for batch in train_ds:
-        patches, patch_indices, label, attention_matrix, loss_mask = batch
-        h, w = 1 + patch_indices[0].max(axis=0)
-        print(h, w)
-        image = rearrange(
-            patches[0][: h * w],
-            "(h w) (p1 p2 c) -> (h p1) (w p2) c",
-            h=h,
-            w=w,
-            p1=14,
-            p2=14,
-            c=3,
-        )
-        plt.imshow(image)
-        plt.show()
