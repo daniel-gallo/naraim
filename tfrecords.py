@@ -13,9 +13,7 @@ from tqdm import tqdm
 
 def image_feature(value):
     """Returns a bytes_list from a string / byte."""
-    return tf.train.Feature(
-        bytes_list=tf.train.BytesList(value=[tf.io.encode_jpeg(value).numpy()])
-    )
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[tf.io.encode_jpeg(value).numpy()]))
 
 
 def bytes_feature(value):
@@ -70,9 +68,7 @@ def main():
     classes = set()
     datapoints = []
     if data_split == "val":
-        with open(
-            f"/scratch-nvme/ml-datasets/imagenet/LOC_{data_split}_solution.csv", "r"
-        ) as fopen:
+        with open(f"/scratch-nvme/ml-datasets/imagenet/LOC_{data_split}_solution.csv", "r") as fopen:
             for idx, line in enumerate(fopen.readlines()[1:]):  # skip header
                 imname = line.strip().split(",")[0]
                 cls = line.strip().split(",")[1].split()[0]
@@ -90,8 +86,7 @@ def main():
     classes = sorted(list(classes))
     class_mapping = {class_name: i for i, class_name in enumerate(classes)}
     annotations = [
-        {"image_id": i, "class_id": class_mapping[cls], "path": path}
-        for i, (path, cls) in enumerate(datapoints)
+        {"image_id": i, "class_id": class_mapping[cls], "path": path} for i, (path, cls) in enumerate(datapoints)
     ]
 
     # Shuffle datapoints
@@ -111,12 +106,8 @@ def main():
         f"{num_tfrecords} total records files.\n"
     )
     for tfrec_num in tqdm(range(num_tfrecords)):
-        samples = annotations[
-            (tfrec_num * num_samples) : ((tfrec_num + 1) * num_samples)
-        ]
-        with tf.io.TFRecordWriter(
-            tfrecords_dir + "/file_%.2i-%i.tfrec" % (tfrec_num, len(samples))
-        ) as writer:
+        samples = annotations[(tfrec_num * num_samples) : ((tfrec_num + 1) * num_samples)]
+        with tf.io.TFRecordWriter(tfrecords_dir + "/file_%.2i-%i.tfrec" % (tfrec_num, len(samples))) as writer:
             for sample in tqdm(samples):
                 image_path = images_dir + sample["path"] + ".JPEG"
                 image = tf.io.decode_jpeg(tf.io.read_file(image_path))

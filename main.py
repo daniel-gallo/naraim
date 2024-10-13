@@ -43,9 +43,7 @@ def get_transformation(transformation: str) -> Transformation:
     elif transformation == "random_resized_crop":
         return RandomResizedCrop(size=224, scale=(0.4, 1.0), ratio=(0.75, 1.33))
     elif transformation == "random_crop":
-        return RandomCrop(
-            scale=(0.4, 1.0), ratio=(0.75, 1.33), min_num_pixels=224 * 224
-        )
+        return RandomCrop(scale=(0.4, 1.0), ratio=(0.75, 1.33), min_num_pixels=224 * 224)
     elif transformation == "square_resize":
         return SquareResize(224)
     elif transformation == "aim_inference":
@@ -67,20 +65,12 @@ def add_model_args(model_args: argparse._ArgumentGroup):
     """
     Arguments that will be passed to initialize the model
     """
-    model_args.add_argument(
-        "--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16"]
-    )
+    model_args.add_argument("--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16"])
     model_args.add_argument("--patch_size", type=int, default=14, help="Patch size")
-    model_args.add_argument(
-        "--max_num_patches", type=int, default=256, help="Max number of patches"
-    )
+    model_args.add_argument("--max_num_patches", type=int, default=256, help="Max number of patches")
     model_args.add_argument("--num_channels", type=int, default=3, help="Num channels")
-    model_args.add_argument(
-        "--num_layers", type=int, default=12, help="Number of layers"
-    )
-    model_args.add_argument(
-        "--num_heads", type=int, default=12, help="Number of attention heads"
-    )
+    model_args.add_argument("--num_layers", type=int, default=12, help="Number of layers")
+    model_args.add_argument("--num_heads", type=int, default=12, help="Number of attention heads")
     model_args.add_argument(
         "--embedding_dimension",
         type=int,
@@ -93,13 +83,9 @@ def add_model_args(model_args: argparse._ArgumentGroup):
         default=3072,
         help="Hidden dimension of the MLP of the ViT",
     )
-    model_args.add_argument(
-        "--dropout_probability", type=float, default=0.0, help="Dropout rate"
-    )
+    model_args.add_argument("--dropout_probability", type=float, default=0.0, help="Dropout rate")
 
-    model_args.add_argument(
-        "--num_categories", type=int, help="Number of classes for classifier"
-    )
+    model_args.add_argument("--num_categories", type=int, help="Number of classes for classifier")
     model_args.add_argument("--use_fractional_positional_encoding", action="store_true")
 
 
@@ -121,9 +107,7 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         default=0.0,
         help="Learning rate at the end of cosine decay",
     )
-    trainer_args.add_argument(
-        "--beta2", type=float, default=0.98, help="Beta2 parameter for AdamW"
-    )
+    trainer_args.add_argument("--beta2", type=float, default=0.98, help="Beta2 parameter for AdamW")
     trainer_args.add_argument(
         "--weight_decay",
         type=float,
@@ -208,13 +192,9 @@ def add_trainer_args(trainer_args: argparse._ArgumentGroup):
         help="Decay rate for the exponential lr schedule",
     )
 
-    trainer_args.add_argument(
-        "--grad_clip_norm", type=float, default=1.0, help="Gradient clipping norm"
-    )
+    trainer_args.add_argument("--grad_clip_norm", type=float, default=1.0, help="Gradient clipping norm")
 
-    trainer_args.add_argument(
-        "--n_images_to_visualize", type=int, default=5, help="How many images to plot"
-    )
+    trainer_args.add_argument("--n_images_to_visualize", type=int, default=5, help="How many images to plot")
 
     trainer_args.add_argument(
         "--num_minibatches",
@@ -248,12 +228,8 @@ def parse_args():
 
     args = parser.parse_args()
 
-    model_hparams = {
-        a.dest: getattr(args, a.dest, None) for a in model_args._group_actions
-    }
-    trainer_kwargs = {
-        a.dest: getattr(args, a.dest, None) for a in trainer_args._group_actions
-    }
+    model_hparams = {a.dest: getattr(args, a.dest, None) for a in model_args._group_actions}
+    trainer_kwargs = {a.dest: getattr(args, a.dest, None) for a in trainer_args._group_actions}
 
     if trainer_kwargs["model_type"] == "autoregressor":
         model_hparams.pop("num_categories")
@@ -265,16 +241,12 @@ if __name__ == "__main__":
     args, model_hparams, trainer_kwargs = parse_args()
 
     train_transformations = list(map(get_transformation, args.train_transformations))
-    validation_transformations = list(
-        map(get_transformation, args.validation_transformations)
-    )
+    validation_transformations = list(map(get_transformation, args.validation_transformations))
     assert_transformation_list_is_valid(train_transformations)
     assert_transformation_list_is_valid(validation_transformations)
 
     train_ds = prefetch(
-        load_dataset(
-            get_train_files(args.dataset_path), args.patch_size, train_transformations
-        )
+        load_dataset(get_train_files(args.dataset_path), args.patch_size, train_transformations)
         .shuffle(4 * args.batch_size)
         .repeat()
         .batch(args.batch_size)

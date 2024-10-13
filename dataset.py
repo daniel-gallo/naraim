@@ -4,7 +4,6 @@ import itertools
 import jax
 import tensorflow as tf
 
-
 AUTOTUNE = tf.data.AUTOTUNE
 
 
@@ -37,9 +36,7 @@ def patchify(image, patch_size):
 
 
 def get_attention_matrix(prefix, max_seq_length):
-    lower_triangular = tf.experimental.numpy.tril(
-        tf.ones((max_seq_length, max_seq_length))
-    )
+    lower_triangular = tf.experimental.numpy.tril(tf.ones((max_seq_length, max_seq_length)))
 
     square = tf.pad(
         tensor=tf.ones((prefix, prefix)),
@@ -66,9 +63,7 @@ def read_labeled_tfrecord(example, patch_size, transformations):
     }
 
     example = tf.io.parse_single_example(example, feature)
-    image = (
-        tf.cast(tf.image.decode_jpeg(example["image"], channels=3), tf.float32) / 255.0
-    )
+    image = tf.cast(tf.image.decode_jpeg(example["image"], channels=3), tf.float32) / 255.0
 
     for transformation in transformations:
         image = transformation(image)
@@ -81,9 +76,7 @@ def read_labeled_tfrecord(example, patch_size, transformations):
     patch_indices, _ = pad_sequence(patch_indices, max_seq_len)
     label = tf.cast(example["class_id"], tf.int32)
 
-    prefix = tf.experimental.numpy.random.randint(
-        low=1, high=seq_length, dtype=tf.experimental.numpy.int32
-    )
+    prefix = tf.experimental.numpy.random.randint(low=1, high=seq_length, dtype=tf.experimental.numpy.int32)
 
     attention_matrix = get_attention_matrix(prefix, max_seq_len)
     loss_mask = get_loss_mask(prefix, seq_length, max_seq_len)

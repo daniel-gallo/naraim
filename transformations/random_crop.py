@@ -37,18 +37,10 @@ class RandomCrop(Transformation):
                 minval=self.scale[0],
                 maxval=self.scale[1],
             )
-            aspect_ratio = tf.math.exp(
-                tf.random.uniform(
-                    shape=(), minval=self.log_ratio[0], maxval=self.log_ratio[1]
-                )
-            )
+            aspect_ratio = tf.math.exp(tf.random.uniform(shape=(), minval=self.log_ratio[0], maxval=self.log_ratio[1]))
 
-            _new_width = tf.cast(
-                tf.math.round(tf.math.sqrt(target_area * aspect_ratio)), tf.int32
-            )
-            _new_height = tf.cast(
-                tf.math.round(tf.math.sqrt(target_area / aspect_ratio)), tf.int32
-            )
+            _new_width = tf.cast(tf.math.round(tf.math.sqrt(target_area * aspect_ratio)), tf.int32)
+            _new_height = tf.cast(tf.math.round(tf.math.sqrt(target_area / aspect_ratio)), tf.int32)
 
             if _new_height * _new_width < self.min_num_pixels:
                 continue

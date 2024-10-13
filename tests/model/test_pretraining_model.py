@@ -37,9 +37,7 @@ def test_pretraining_model():
     params = pretraining_model.init(rng, x, patch_indices, is_training=True)
 
     # Check if shape is correct
-    output_shape = pretraining_model.apply(
-        params, x, patch_indices, is_training=True, rngs={"dropout": rng}
-    ).shape
+    output_shape = pretraining_model.apply(params, x, patch_indices, is_training=True, rngs={"dropout": rng}).shape
     assert output_shape == (bs, num_patches, patch_size**2 * num_channels)
 
     # Check inference does not need rng

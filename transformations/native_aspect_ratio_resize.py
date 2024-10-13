@@ -22,15 +22,11 @@ class NativeAspectRatioResize(Transformation):
         height = tf.cast(224 * sqrt_ratio, tf.int32)
         width = tf.cast(224**2 / tf.cast(height, tf.float32), tf.int32)
         # resize the image, now the num pixels is ~= 224^2
-        image = tf.image.resize(
-            image, [height, width], tf.image.ResizeMethod.BICUBIC, antialias=True
-        )
+        image = tf.image.resize(image, [height, width], tf.image.ResizeMethod.BICUBIC, antialias=True)
 
         target_height = height - (height % self.patch_size)
         target_width = width - (width % self.patch_size)
         offset_height = (height - target_height) // 2
         offset_width = (width - target_width) // 2
-        image = tf.image.crop_to_bounding_box(
-            image, offset_height, offset_width, target_height, target_width
-        )
+        image = tf.image.crop_to_bounding_box(image, offset_height, offset_width, target_height, target_width)
         return image

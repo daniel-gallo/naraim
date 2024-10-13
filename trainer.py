@@ -16,8 +16,8 @@ from orbax.checkpoint import AsyncCheckpointer, PyTreeCheckpointHandler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
-from exponential_scheduler import warmup_exponential_decay_cooldown_scheduler
 from dataset import prefetch
+from exponential_scheduler import warmup_exponential_decay_cooldown_scheduler
 from model import ClassificationModel, PretrainingModel
 from model.classification import NoTransformerClassificationModel
 
@@ -120,9 +120,7 @@ class Trainer:
             self.load_checkpoint(checkpoint_path_to_load, model_type, load_only_params)
 
         # Jitting train and eval steps
-        self.train_step = jax.jit(
-            self.train_step, static_argnames=("loss_fn", "num_minibatches")
-        )
+        self.train_step = jax.jit(self.train_step, static_argnames=("loss_fn", "num_minibatches"))
         self.eval_step = jax.jit(self.eval_step, static_argnames="loss_fn")
 
     def init_logger(self):
@@ -155,9 +153,7 @@ class Trainer:
 
         elif self.lr_schedule_type == "exponential":
             # decay_steps = 500k - 10k - 5k
-            self.decay_steps = (
-                self.max_num_iterations - self.cooldown_steps - self.warmup_steps
-            )
+            self.decay_steps = self.max_num_iterations - self.cooldown_steps - self.warmup_steps
 
             self.lr_schedule = warmup_exponential_decay_cooldown_scheduler(
                 self.warmup_steps,
@@ -170,9 +166,7 @@ class Trainer:
 
         self.optimizer = optax.chain(
             optax.clip_by_global_norm(self.grad_clip_norm),  # Clip gradients at norm 1
-            optax.adamw(
-                self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay
-            ),
+            optax.adamw(self.lr_schedule, b2=self.beta2, weight_decay=self.weight_decay),
         )
 
         if freeze_backbone:
@@ -185,15 +179,11 @@ class Trainer:
             }
 
             param_partitions = traverse_util.path_aware_map(
-                lambda path, _: "frozen"
-                if "ClassificationHead_0" not in path
-                else "trainable",
+                lambda path, _: "frozen" if "ClassificationHead_0" not in path else "trainable",
                 self.init_params,
             )
 
-            self.optimizer = optax.multi_transform(
-                partition_optimizers, param_partitions
-            )
+            self.optimizer = optax.multi_transform(partition_optimizers, param_partitions)
 
         # Initialize training state
         self.state = train_state.TrainState.create(
@@ -211,9 +201,7 @@ class Trainer:
             rngs=dropout_rng,
         )
 
-        loss = optax.softmax_cross_entropy_with_integer_labels(
-            logits, batch.labels
-        ).mean()
+        loss = optax.softmax_cross_entropy_with_integer_labels(logits, batch.labels).mean()
 
         correct_pred = jnp.equal(jnp.argmax(logits, axis=-1), batch.labels)
         batch_size = batch.patches.shape[0]
@@ -272,9 +260,7 @@ class Trainer:
                 end = start + minibatch_size
                 minibatch = jax.tree_map(lambda x: x[start:end], batch)
 
-                (_, minibatch_metrics), minibatch_grads = grad_fn(
-                    state.params, rngs[minibatch_idx], minibatch
-                )
+                (_, minibatch_metrics), minibatch_grads = grad_fn(state.params, rngs[minibatch_idx], minibatch)
 
                 # Accumulate gradients and metrics across minibatches.
                 if grads is None:
@@ -289,9 +275,7 @@ class Trainer:
         return grads, metrics
 
     def train_step(self, loss_fn, state, step_rng, batch, num_minibatches, metrics):
-        grads, step_metrics = self.accumulate_gradients(
-            loss_fn, state, batch, step_rng, num_minibatches
-        )
+        grads, step_metrics = self.accumulate_gradients(loss_fn, state, batch, step_rng, num_minibatches)
 
         new_state = state.apply_gradients(grads=grads)
 
@@ -343,12 +327,8 @@ class Trainer:
 
             # Normalise the patches
             if self.model_type == "autoregressor" and self.norm_pix_loss == "True":
-                mean = jnp.mean(
-                    batch.patches, axis=-1, keepdims=True
-                )  # shape [bs, patches, 1]
-                var = jnp.var(
-                    batch.patches, axis=-1, keepdims=True
-                )  # shape [bs, patches, 1]
+                mean = jnp.mean(batch.patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+                var = jnp.var(batch.patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
                 labels_norm = (batch.patches - mean) / (var + 1.0e-6) ** 0.5
                 batch = batch.replace(labels=labels_norm)
             elif self.model_type == "autoregressor":
@@ -378,9 +358,7 @@ class Trainer:
                 for metric_name in train_metrics.keys():
                     metric_value = jax.device_get(train_metrics)[metric_name][0]
                     metric_count = jax.device_get(train_metrics)[metric_name][1]
-                    self.logger.add_scalar(
-                        f"{metric_name}/train", metric_value / metric_count, idx
-                    )
+                    self.logger.add_scalar(f"{metric_name}/train", metric_value / metric_count, idx)
                 # Reinitialize the train_metrics
                 train_metrics = jax.tree.map(lambda x: jnp.zeros_like(x), train_metrics)
 
@@ -388,21 +366,15 @@ class Trainer:
             if idx > first_step and (idx + 1) % self.eval_every_n_steps == 0:
                 self.save_checkpoint(step=idx + 1)
                 # Evaluate the model and return the eval metrics
-                eval_metrics = self.eval_model(
-                    eval_fn, self.state, prefetch(val_loader.as_numpy_iterator())
-                )
+                eval_metrics = self.eval_model(eval_fn, self.state, prefetch(val_loader.as_numpy_iterator()))
 
                 for metric_name in eval_metrics.keys():
                     metric_value = jax.device_get(eval_metrics)[metric_name][0]
                     metric_count = jax.device_get(eval_metrics)[metric_name][1]
-                    self.logger.add_scalar(
-                        f"{metric_name}/val", metric_value / metric_count, idx
-                    )
+                    self.logger.add_scalar(f"{metric_name}/val", metric_value / metric_count, idx)
 
                 # Log the learning rate
-                self.logger.add_scalar(
-                    "Learning rate", float(self.lr_schedule(idx)), idx
-                )
+                self.logger.add_scalar("Learning rate", float(self.lr_schedule(idx)), idx)
 
                 # Flush the logger
                 self.logger.flush()
@@ -424,12 +396,8 @@ class Trainer:
 
             # Normalise the patches
             if self.model_type == "autoregressor" and self.norm_pix_loss == "True":
-                mean = jnp.mean(
-                    batch.patches, axis=-1, keepdims=True
-                )  # shape [bs, patches, 1]
-                var = jnp.var(
-                    batch.patches, axis=-1, keepdims=True
-                )  # shape [bs, patches, 1]
+                mean = jnp.mean(batch.patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
+                var = jnp.var(batch.patches, axis=-1, keepdims=True)  # shape [bs, patches, 1]
                 labels_norm = (batch.patches - mean) / (var + 1.0e-6) ** 0.5
                 batch = batch.replace(labels=labels_norm)
             elif self.model_type == "autoregressor":
@@ -453,9 +421,7 @@ class Trainer:
                         batch.attention_masks,
                         plot_random_images=True,
                     )
-            _, batch_metrics = loss_fn(
-                params=state.params, dropout_rng=None, batch=batch
-            )
+            _, batch_metrics = loss_fn(params=state.params, dropout_rng=None, batch=batch)
             if metrics is None:
                 metrics = batch_metrics
             else:
@@ -483,9 +449,7 @@ class Trainer:
 
             if "PretrainingHead_0" in restored["params"]:
                 restored["params"].pop("PretrainingHead_0")
-                restored["params"]["ClassificationHead_0"] = self.state.params[
-                    "ClassificationHead_0"
-                ]
+                restored["params"]["ClassificationHead_0"] = self.state.params["ClassificationHead_0"]
 
             restored["params"] = translate(self.state.params, restored["params"])
 
@@ -518,9 +482,7 @@ class Trainer:
                 opt_state=restored_opt_state,
             )
 
-    def visualize_pretraining_output(
-        self, patches, patch_indices, attention_matrices, plot_random_images
-    ):
+    def visualize_pretraining_output(self, patches, patch_indices, attention_matrices, plot_random_images):
         if plot_random_images:
             transposition_indices = np.random.permutation(patches.shape[0])
             patches = patches[transposition_indices]
@@ -539,9 +501,7 @@ class Trainer:
             rngs=None,
         )
         # Prepend a black patch to the predictions to make the visualization line up
-        preds = jnp.concatenate(
-            (jnp.zeros((preds.shape[0], 1, preds.shape[2])), preds), axis=1
-        )
+        preds = jnp.concatenate((jnp.zeros((preds.shape[0], 1, preds.shape[2])), preds), axis=1)
 
         for i in range(self.n_images_to_visualize):
             max_row = patch_indices[i][:, 0].max()
@@ -555,11 +515,11 @@ class Trainer:
                 if idx > 0 and row == 0 and col == 0:  # skip padded tokens
                     break
 
-                tgt_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
-                    rearrange(targets[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
+                tgt_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = rearrange(
+                    targets[i][idx], "(h w c) -> c h w", h=14, w=14, c=3
                 )
-                pred_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
-                    rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
+                pred_norm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = rearrange(
+                    preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3
                 )
 
             for idx, (row, col) in enumerate(patch_indices[i]):
@@ -568,12 +528,10 @@ class Trainer:
 
                 # invert the normalization
                 tgt_unnorm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
-                    rearrange(targets[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
-                    * (var[i][idx] + 1.0e-6) ** 0.5
+                    rearrange(targets[i][idx], "(h w c) -> c h w", h=14, w=14, c=3) * (var[i][idx] + 1.0e-6) ** 0.5
                 ) + mean[i][idx]
                 pred_unnorm[:, row * 14 : (row + 1) * 14, col * 14 : (col + 1) * 14] = (
-                    rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3)
-                    * (var[i][idx] + 1.0e-6) ** 0.5
+                    rearrange(preds[i][idx], "(h w c) -> c h w", h=14, w=14, c=3) * (var[i][idx] + 1.0e-6) ** 0.5
                 ) + mean[i][idx]
 
             # Tensorboard only accepts uint8 images

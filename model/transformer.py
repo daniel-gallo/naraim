@@ -50,9 +50,7 @@ class AttentionBlock(nn.Module):
         )(x)
         q, k, v = jnp.split(qkv, 3, axis=-1)
         x = dot_product_attention(q, k, v, mask)
-        x = nn.DenseGeneral(
-            input_features, axis=(-2, -1), dtype=self.dtype, name="output_layer"
-        )(x)
+        x = nn.DenseGeneral(input_features, axis=(-2, -1), dtype=self.dtype, name="output_layer")(x)
         return x
 
 

@@ -6,9 +6,7 @@ from transformations.transformation import Transformation
 
 class AutoAugment(Transformation):
     def __init__(self):
-        self.transform = rand_augment_transform(
-            config_str="rand-m9-mstd0.5-inc1", hparams={}
-        )
+        self.transform = rand_augment_transform(config_str="rand-m9-mstd0.5-inc1", hparams={})
 
     def __call__(self, image):
         # FIXME #24: AutoAugment only works if it's the last transformation

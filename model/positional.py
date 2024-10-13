@@ -26,9 +26,7 @@ def get_1d_positional_embedding(embedding_dimension: int, max_length: int) -> ja
     return embedding
 
 
-def get_2d_positional_embedding(
-    embedding_dimension: int, height: int, width: int
-) -> jax.Array:
+def get_2d_positional_embedding(embedding_dimension: int, height: int, width: int) -> jax.Array:
     """
     The output is an array of shape (height, width, embedding_dimension)
     """
@@ -69,9 +67,7 @@ class PositionalEncoding(nn.Module):
         Output:
             x: Array of shape (batch_size, num_patches, embedding_dimension)
         """
-        positions = self.positional_encoding[
-            patch_indices[:, :, 0], patch_indices[:, :, 1]
-        ]
+        positions = self.positional_encoding[patch_indices[:, :, 0], patch_indices[:, :, 1]]
         x = x + positions
 
         return x
@@ -89,16 +85,8 @@ class FractionalPositionalEncoding(nn.Module):
         """
         embedding_dimension = x.shape[-1]
 
-        max_heights = (
-            patch_indices[:, :, 0]
-            .max(axis=1)[:, jnp.newaxis, jnp.newaxis]
-            .repeat(x.shape[1], axis=1)
-        )
-        max_widths = (
-            patch_indices[:, :, 1]
-            .max(axis=1)[:, jnp.newaxis, jnp.newaxis]
-            .repeat(x.shape[1], axis=1)
-        )
+        max_heights = patch_indices[:, :, 0].max(axis=1)[:, jnp.newaxis, jnp.newaxis].repeat(x.shape[1], axis=1)
+        max_widths = patch_indices[:, :, 1].max(axis=1)[:, jnp.newaxis, jnp.newaxis].repeat(x.shape[1], axis=1)
 
         fractional_heights = patch_indices[:, :, 0:1] / max_heights
         fractional_widths = patch_indices[:, :, 1:2] / max_widths

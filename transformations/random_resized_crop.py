@@ -24,17 +24,13 @@ class RandomResizedCrop(Transformation):
         if in_ratio < tf.math.reduce_min(self.ratio):
             new_width = original_width
             new_height = tf.cast(
-                tf.math.round(
-                    tf.cast(new_width, tf.float32) / tf.math.reduce_min(self.ratio)
-                ),
+                tf.math.round(tf.cast(new_width, tf.float32) / tf.math.reduce_min(self.ratio)),
                 tf.int32,
             )
         elif in_ratio > tf.math.reduce_max(self.ratio):
             new_height = original_height
             new_width = tf.cast(
-                tf.math.round(
-                    tf.cast(new_height, tf.float32) * tf.math.reduce_max(self.ratio)
-                ),
+                tf.math.round(tf.cast(new_height, tf.float32) * tf.math.reduce_max(self.ratio)),
                 tf.int32,
             )
         else:  # whole image
@@ -50,18 +46,10 @@ class RandomResizedCrop(Transformation):
                 minval=self.scale[0],
                 maxval=self.scale[1],
             )
-            aspect_ratio = tf.math.exp(
-                tf.random.uniform(
-                    shape=(), minval=self.log_ratio[0], maxval=self.log_ratio[1]
-                )
-            )
+            aspect_ratio = tf.math.exp(tf.random.uniform(shape=(), minval=self.log_ratio[0], maxval=self.log_ratio[1]))
 
-            _new_width = tf.cast(
-                tf.math.round(tf.math.sqrt(target_area * aspect_ratio)), tf.int32
-            )
-            _new_height = tf.cast(
-                tf.math.round(tf.math.sqrt(target_area / aspect_ratio)), tf.int32
-            )
+            _new_width = tf.cast(tf.math.round(tf.math.sqrt(target_area * aspect_ratio)), tf.int32)
+            _new_height = tf.cast(tf.math.round(tf.math.sqrt(target_area / aspect_ratio)), tf.int32)
 
             if 0 < _new_width <= original_width and 0 < _new_height <= original_height:
                 i = tf.random.uniform(
@@ -85,7 +73,5 @@ class RandomResizedCrop(Transformation):
     def __call__(self, image):
         i, j, new_height, new_width = self.get_params(image)
         crop = image[i : i + new_height, j : j + new_width]
-        resized_crop = tf.image.resize(
-            crop, self.size, method=tf.image.ResizeMethod.BICUBIC, antialias=True
-        )
+        resized_crop = tf.image.resize(crop, self.size, method=tf.image.ResizeMethod.BICUBIC, antialias=True)
         return resized_crop

@@ -8,6 +8,4 @@ class SquareResize(Transformation):
         self.size = tf.constant([size, size])
 
     def __call__(self, image):
-        return tf.image.resize(
-            image, self.size, method=tf.image.ResizeMethod.BICUBIC, antialias=True
-        )
+        return tf.image.resize(image, self.size, method=tf.image.ResizeMethod.BICUBIC, antialias=True)

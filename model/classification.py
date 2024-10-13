@@ -46,9 +46,7 @@ class ClassificationModel(nn.Module):
 
     @nn.compact
     def __call__(self, x, patch_indices, is_training: bool):
-        x = InitialProjection(
-            dtype=self.dtype, embedding_dimension=self.embedding_dimension
-        )(x)
+        x = InitialProjection(dtype=self.dtype, embedding_dimension=self.embedding_dimension)(x)
         if self.use_fractional_positional_encoding:
             x = FractionalPositionalEncoding()(x, patch_indices)
         else:
@@ -88,9 +86,7 @@ class NoTransformerClassificationModel(nn.Module):
 
     @nn.compact
     def __call__(self, x, patch_indices, is_training: bool):
-        x = InitialProjection(
-            dtype=self.dtype, embedding_dimension=self.embedding_dimension
-        )(x)
+        x = InitialProjection(dtype=self.dtype, embedding_dimension=self.embedding_dimension)(x)
         if self.use_fractional_positional_encoding:
             x = FractionalPositionalEncoding()(x, patch_indices)
         else:

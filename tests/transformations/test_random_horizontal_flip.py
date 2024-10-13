@@ -8,6 +8,4 @@ def test_random_horizontal_flip():
     random_horizontal_flip = RandomHorizontalFlip()
     new_image = random_horizontal_flip(image)
 
-    assert tf.reduce_all(new_image == tf.reverse(image, axis=[1])) or tf.reduce_all(
-        new_image == image
-    )
+    assert tf.reduce_all(new_image == tf.reverse(image, axis=[1])) or tf.reduce_all(new_image == image)
